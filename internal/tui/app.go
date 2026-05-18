@@ -4,7 +4,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -306,7 +305,7 @@ func (m *Model) loadAttachments(cardID int) tea.Cmd {
 	}
 }
 
-// statusf is a convenience for setting a transient status line.
-func (m *Model) statusf(format string, a ...any) {
-	m.status = fmt.Sprintf(format, a...)
+// setStatus sets a transient status line shown in the header.
+func (m *Model) setStatus(text string) {
+	m.status = text
 }

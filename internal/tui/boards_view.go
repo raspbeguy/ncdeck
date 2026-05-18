@@ -61,7 +61,7 @@ func (b boardsModel) View(width, height int) string {
 		return subtleStyle.Render("\n  No boards (press q to quit, r to retry).\n")
 	}
 	rows := []string{
-		titleStyle.Copy().Background(colSubtle).Render(" Boards "),
+		titleStyle.Background(colSubtle).Render(" Boards "),
 		"",
 	}
 	for i, board := range b.boards {

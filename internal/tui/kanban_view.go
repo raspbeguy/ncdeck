@@ -101,14 +101,14 @@ func (k *kanbanModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 			switch km.String() {
 			case "esc":
 				k.formKind = ""
-				root.statusf("")
+				root.setStatus("")
 				return root, nil
 			case "enter":
 				title := strings.TrimSpace(k.form.Value())
 				kind := k.formKind
 				k.formKind = ""
 				k.form.SetValue("")
-				root.statusf("")
+				root.setStatus("")
 				if title == "" {
 					return root, nil
 				}
@@ -129,7 +129,7 @@ func (k *kanbanModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 		case "esc":
 			if k.moveMode {
 				k.moveMode = false
-				root.statusf("")
+				root.setStatus("")
 				return root, nil
 			}
 			return root, func() tea.Msg { return backMsg{} }
@@ -187,7 +187,7 @@ func (k *kanbanModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 			if k.focusedCard() != nil {
 				k.moveMode = true
 				k.moveTarget = k.stackIdx
-				root.statusf("move: ←/→ pick target stack, ⏎ confirm, esc cancel")
+				root.setStatus("move: ←/→ pick target stack, ⏎ confirm, esc cancel")
 			}
 		case "a":
 			if c := k.focusedCard(); c != nil {

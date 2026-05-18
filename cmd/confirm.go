@@ -8,13 +8,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
 
 // confirm asks a yes/no question on stderr. When stdin is not a TTY (script/CI),
 // confirm returns false so callers can require an explicit --yes flag.
-func confirm(cmd *cobra.Command, prompt string) bool {
+func confirm(prompt string) bool {
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		return false
 	}

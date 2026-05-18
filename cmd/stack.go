@@ -122,7 +122,7 @@ var stackDeleteCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("invalid stack id %q", args[1])
 		}
-		if !stackDeleteYes && !confirm(cmd, fmt.Sprintf("Delete stack %d?", stackID)) {
+		if !stackDeleteYes && !confirm(fmt.Sprintf("Delete stack %d?", stackID)) {
 			return fmt.Errorf("aborted")
 		}
 		c, err := newClient()

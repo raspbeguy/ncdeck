@@ -163,7 +163,7 @@ var boardDeleteCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("invalid board id %q", args[0])
 		}
-		if !boardDeleteYes && !confirm(cmd, fmt.Sprintf("Delete board %d?", id)) {
+		if !boardDeleteYes && !confirm(fmt.Sprintf("Delete board %d?", id)) {
 			return fmt.Errorf("aborted")
 		}
 		c, err := newClient()

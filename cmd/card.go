@@ -433,7 +433,7 @@ var cardDeleteCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if !cardDeleteYes && !confirm(cmd, fmt.Sprintf("Delete card %d?", cardID)) {
+		if !cardDeleteYes && !confirm(fmt.Sprintf("Delete card %d?", cardID)) {
 			return fmt.Errorf("aborted")
 		}
 		c, err := newClient()

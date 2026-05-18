@@ -93,7 +93,7 @@ var labelDeleteCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("invalid label id %q", args[1])
 		}
-		if !labelDeleteYes && !confirm(cmd, fmt.Sprintf("Delete label %d?", labelID)) {
+		if !labelDeleteYes && !confirm(fmt.Sprintf("Delete label %d?", labelID)) {
 			return fmt.Errorf("aborted")
 		}
 		c, err := newClient()
