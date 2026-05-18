@@ -10,14 +10,13 @@ import (
 	"github.com/charmbracelet/glamour"
 )
 
-// pickStyle resolves the glamour style once, without doing an OSC 11 terminal
-// query (which is what makes glamour.WithAutoStyle() slow on some terminals).
-// Respect $NCDECK_THEME, then $COLORFGBG, then default to "dark".
+// glamour.WithAutoStyle() issues an OSC 11 terminal query that blocks for
+// the response, slowing down TUI startup on some terminals. We pick a style
+// statically from env hints instead.
 func pickStyle() string {
 	if v := strings.TrimSpace(os.Getenv("NCDECK_THEME")); v != "" {
 		return v
 	}
-	// COLORFGBG is "fg;bg", a small bg number means a dark background.
 	if v := os.Getenv("COLORFGBG"); v != "" {
 		parts := strings.Split(v, ";")
 		if len(parts) >= 2 {
@@ -30,8 +29,8 @@ func pickStyle() string {
 	return "dark"
 }
 
-// mdRenderer is the shared glamour renderer; constructing one is non-trivial
-// (parses styles, builds the goldmark pipeline), so we cache by word-wrap width.
+// Glamour renderer construction parses styles and builds a goldmark pipeline,
+// so we cache one per word-wrap width.
 var (
 	mdMu     sync.Mutex
 	mdCache  = map[int]*glamour.TermRenderer{}

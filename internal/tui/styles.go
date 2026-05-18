@@ -9,11 +9,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// foregroundFor picks a readable foreground colour (near-black or near-white)
-// based on a background colour's perceived luminance. Accepts colours in
-// "#RRGGBB" form; unknown forms (8-bit terminal palette, named colours) fall
-// back to black, which is safe for the warm pastel-ish palette typical Deck
-// boards use.
+// foregroundFor picks a readable foreground on top of bg using Rec. 601
+// luminance. Non-hex inputs (palette numbers, names) fall back to black.
 func foregroundFor(bg lipgloss.Color) lipgloss.Color {
 	s := string(bg)
 	if !strings.HasPrefix(s, "#") || len(s) != 7 {
@@ -27,19 +24,14 @@ func foregroundFor(bg lipgloss.Color) lipgloss.Color {
 		return int(v)
 	}
 	r, g, b := parse(1, 3), parse(3, 5), parse(5, 7)
-	// Rec. 601 relative luminance; cheap and good enough for our palette.
 	lum := 0.299*float64(r) + 0.587*float64(g) + 0.114*float64(b)
 	if lum > 140 {
-		return lipgloss.Color("16") // near-black on light bg
+		return lipgloss.Color("16")
 	}
-	return lipgloss.Color("230") // near-white on dark bg
+	return lipgloss.Color("230")
 }
 
-// Color palette loosely based on the official Deck web UI.
-//
-// colSelected is the fallback accent when the board colour hasn't been loaded
-// yet; once it is, renderStack/renderCardWithAccent take the board's own
-// colour instead.
+// colSelected is the fallback accent until the board colour loads.
 var (
 	colPrimary  = lipgloss.Color("#0082c9")
 	colMuted    = lipgloss.Color("240")
@@ -58,10 +50,8 @@ var (
 
 	subtleStyle = lipgloss.NewStyle().Foreground(colSubtle)
 
-	// stackHeaderStyle is the base for both focused and unfocused columns.
-	// renderStack derives the focused variant inline by chaining .Foreground()
-	// (lipgloss returns a copy on each chained call, so this does not mutate
-	// the package-level value).
+	// renderStack chains .Foreground() to derive a focused variant; lipgloss
+	// copies on each chain so the package-level value isn't mutated.
 	stackHeaderStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("230")).
 				Background(colMuted).

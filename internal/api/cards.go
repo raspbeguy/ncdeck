@@ -8,11 +8,9 @@ import (
 	"time"
 )
 
-// ParseDueDate normalises a user-provided due date into the RFC3339 form the
-// Deck API expects. An RFC3339 input is returned verbatim; a YYYY-MM-DD input
-// is interpreted as midnight in the user's local timezone. An empty input
-// returns an empty string with no error so callers can decide whether that
-// means "no change" or "clear".
+// ParseDueDate accepts RFC3339 verbatim or YYYY-MM-DD as local-midnight.
+// Empty input returns "" without error so callers choose the meaning
+// (no-change vs. clear).
 func ParseDueDate(s string) (string, error) {
 	if s == "" {
 		return "", nil
@@ -56,15 +54,9 @@ func (c *Client) GetCard(ctx context.Context, boardID, stackID, cardID int) (*Ca
 	return &out, nil
 }
 
-// UpdateCardInput captures fields supported by PUT /boards/{b}/stacks/{s}/cards/{c}.
-//
-// DueDate and Done are *string so callers can distinguish three cases:
-//   - field omitted entirely from the wire format    , unsupported (use a fetched
-//     value and pass it through)
-//   - explicit JSON null                             , clears the value
-//   - non-empty string                               , sets the value
-//
-// Empty-string semantics are server-defined; prefer nil to clear.
+// UpdateCardInput uses *string for DueDate/Done so nil serialises as JSON
+// null (clears the field on the server). Empty-string semantics are server-
+// defined; prefer nil to clear.
 type UpdateCardInput struct {
 	Title       string  `json:"title"`
 	Description string  `json:"description"`
@@ -125,10 +117,9 @@ type ReorderInput struct {
 	StackID int `json:"stackId"`
 }
 
-// ReorderCard moves a card to (or within) the stack identified by in.StackID
-// and sets its order. The Deck API's reorder route takes the destination stack
-// ID in the URL path, not the source: passing the source silently no-ops the
-// stack change.
+// Deck's reorder route uses the *destination* stack ID in the URL path,
+// despite the docs implying it's the source; passing the source silently
+// no-ops the stack change.
 func (c *Client) ReorderCard(ctx context.Context, boardID, cardID int, in ReorderInput) error {
 	path := fmt.Sprintf("/boards/%d/stacks/%d/cards/%d/reorder", boardID, in.StackID, cardID)
 	return c.do(ctx, "PUT", path, in, nil)

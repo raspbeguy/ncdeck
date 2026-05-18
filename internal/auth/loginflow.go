@@ -16,7 +16,6 @@ import (
 	"time"
 )
 
-// LoginInit is the response from POST /index.php/login/v2.
 type LoginInit struct {
 	Login string   `json:"login"`
 	Poll  PollInfo `json:"poll"`
@@ -27,14 +26,12 @@ type PollInfo struct {
 	Endpoint string `json:"endpoint"`
 }
 
-// LoginResult comes back from the poll endpoint once the user completes the flow.
 type LoginResult struct {
 	Server      string `json:"server"`
 	LoginName   string `json:"loginName"`
 	AppPassword string `json:"appPassword"`
 }
 
-// Start initiates Login Flow v2 against the given Nextcloud URL.
 func Start(ctx context.Context, baseURL string) (*LoginInit, error) {
 	baseURL = strings.TrimRight(baseURL, "/")
 	req, err := http.NewRequestWithContext(ctx, "POST", baseURL+"/index.php/login/v2", nil)
@@ -58,8 +55,8 @@ func Start(ctx context.Context, baseURL string) (*LoginInit, error) {
 	return &out, nil
 }
 
-// Poll polls the endpoint with the token until the user completes login (200) or ctx is cancelled.
-// Polling cadence: every 2 seconds.
+// Poll returns once the user finishes the browser flow (HTTP 200) or ctx is cancelled.
+// 404 means "not yet, keep polling".
 func Poll(ctx context.Context, info PollInfo) (*LoginResult, error) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
@@ -95,7 +92,7 @@ func Poll(ctx context.Context, info PollInfo) (*LoginResult, error) {
 	}
 }
 
-// OpenBrowser tries to open the URL in the default browser; failure is non-fatal.
+// Returned errors are non-fatal: callers fall back to printing the URL.
 func OpenBrowser(rawURL string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {

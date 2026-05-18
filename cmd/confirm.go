@@ -11,8 +11,7 @@ import (
 	"golang.org/x/term"
 )
 
-// confirm asks a yes/no question on stderr. When stdin is not a TTY (script/CI),
-// confirm returns false so callers can require an explicit --yes flag.
+// Non-TTY stdin returns false so script/CI callers must pass --yes explicitly.
 func confirm(prompt string) bool {
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		return false

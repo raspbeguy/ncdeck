@@ -47,8 +47,6 @@ func loadDescription(literal, file string) (string, error) {
 	return literal, nil
 }
 
-// parseDue is the cmd-package alias for api.ParseDueDate, kept so existing
-// callers in this file read cleanly.
 func parseDue(s string) (string, error) { return api.ParseDueDate(s) }
 
 var cardListCmd = &cobra.Command{
@@ -264,8 +262,8 @@ var cardMoveCmd = &cobra.Command{
 		if err := c.ReorderCard(cmd.Context(), boardID, cardID, api.ReorderInput{Order: cardMoveOrder, StackID: cardMoveStack}); err != nil {
 			return err
 		}
-		// Re-fetch so we can report the order the server actually normalised to,
-		// rather than echoing the requested value (often 999).
+		// Reports the order the server actually normalised to (the requested
+		// value, often 999, gets remapped).
 		k, err := c.GetCard(cmd.Context(), boardID, cardMoveStack, cardID)
 		if err != nil {
 			fmt.Fprintf(cmd.OutOrStdout(), "Moved card %d to stack %d\n", cardID, cardMoveStack)
@@ -434,7 +432,6 @@ var cardDeleteCmd = &cobra.Command{
 	},
 }
 
-// parseTripleID parses three positional args into board/stack/card IDs.
 func parseTripleID(args []string) (int, int, int, error) {
 	if len(args) < 3 {
 		return 0, 0, 0, fmt.Errorf("expected boardID stackID cardID")

@@ -4,7 +4,6 @@ package api
 
 import "time"
 
-// Board mirrors the Deck API board resource.
 type Board struct {
 	ID            int     `json:"id"`
 	Title         string  `json:"title"`
@@ -33,7 +32,6 @@ type Perms struct {
 	Share  bool `json:"PERMISSION_SHARE"`
 }
 
-// Stack is a column on a board.
 type Stack struct {
 	ID           int    `json:"id"`
 	Title        string `json:"title"`
@@ -45,7 +43,6 @@ type Stack struct {
 	ETag         string `json:"ETag,omitempty"`
 }
 
-// Card is a task in a stack.
 type Card struct {
 	ID               int          `json:"id"`
 	Title            string       `json:"title"`
@@ -69,7 +66,6 @@ type Card struct {
 	ETag             string       `json:"ETag,omitempty"`
 }
 
-// Label is a board-level tag.
 type Label struct {
 	ID           int    `json:"id"`
 	Title        string `json:"title"`
@@ -80,7 +76,6 @@ type Label struct {
 	ETag         string `json:"ETag,omitempty"`
 }
 
-// Assignment links a user to a card.
 type Assignment struct {
 	ID          int    `json:"id"`
 	ParticipantOwner `json:"participant"`
@@ -94,7 +89,6 @@ type ParticipantOwner struct {
 	DisplayName string `json:"displayname"`
 }
 
-// Attachment metadata for a card.
 type Attachment struct {
 	ID           int    `json:"id"`
 	CardID       int    `json:"cardId"`
@@ -107,7 +101,6 @@ type Attachment struct {
 	Extended     map[string]any `json:"extendedData,omitempty"`
 }
 
-// Comment on a card (from Nextcloud's comments app via Deck OCS routes).
 type Comment struct {
 	ID           int       `json:"id"`
 	ObjectID     int       `json:"objectId"`

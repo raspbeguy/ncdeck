@@ -7,7 +7,6 @@ import (
 	"fmt"
 )
 
-// ListBoards returns all boards visible to the authenticated user.
 func (c *Client) ListBoards(ctx context.Context, details bool) ([]Board, error) {
 	path := "/boards"
 	if details {
@@ -20,7 +19,6 @@ func (c *Client) ListBoards(ctx context.Context, details bool) ([]Board, error) 
 	return out, nil
 }
 
-// GetBoard returns a single board.
 func (c *Client) GetBoard(ctx context.Context, id int) (*Board, error) {
 	var out Board
 	if err := c.do(ctx, "GET", fmt.Sprintf("/boards/%d", id), nil, &out); err != nil {
@@ -29,7 +27,6 @@ func (c *Client) GetBoard(ctx context.Context, id int) (*Board, error) {
 	return &out, nil
 }
 
-// CreateBoardInput captures fields supported by POST /boards.
 type CreateBoardInput struct {
 	Title string `json:"title"`
 	Color string `json:"color"`
@@ -43,7 +40,6 @@ func (c *Client) CreateBoard(ctx context.Context, in CreateBoardInput) (*Board, 
 	return &out, nil
 }
 
-// UpdateBoardInput captures fields supported by PUT /boards/{id}.
 type UpdateBoardInput struct {
 	Title    string `json:"title"`
 	Color    string `json:"color"`

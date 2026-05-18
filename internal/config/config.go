@@ -10,20 +10,15 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config is the on-disk configuration. The Password field holds a Nextcloud
-// app password (not the user's real password) and is currently persisted as
-// plaintext in a 0600-mode file under XDG_CONFIG_HOME.
-//
-// TODO(keyring): move Password into the OS keychain via
-// github.com/zalando/go-keyring (or similar), falling back to plaintext on
-// platforms where no keyring is available (headless CI, etc.).
+// Password holds a Nextcloud app password (not the user's real password).
+// TODO(keyring): move into OS keychain (github.com/zalando/go-keyring) with
+// a plaintext fallback for headless platforms.
 type Config struct {
 	URL      string `yaml:"url"`
 	Username string `yaml:"username"`
 	Password string `yaml:"password"`
 }
 
-// DefaultPath returns ~/.config/ncdeck/config.yaml, honoring XDG_CONFIG_HOME.
 func DefaultPath() string {
 	if v := os.Getenv("NCDECK_CONFIG"); v != "" {
 		return v
@@ -36,8 +31,7 @@ func DefaultPath() string {
 	return filepath.Join(base, "ncdeck", "config.yaml")
 }
 
-// Load reads the config file (if any) and overlays NCDECK_URL/USER/TOKEN env vars.
-// A missing file is not an error, env-only configuration is supported.
+// Env vars override file values so env-only configuration works for CI/agents.
 func Load(path string) (*Config, error) {
 	cfg := &Config{}
 	if path == "" {
@@ -62,7 +56,6 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
-// Save writes the config to path with mode 0600, creating parent dirs as needed.
 func Save(path string, cfg *Config) error {
 	if path == "" {
 		path = DefaultPath()
@@ -77,7 +70,6 @@ func Save(path string, cfg *Config) error {
 	return os.WriteFile(path, data, 0o600)
 }
 
-// Validate returns an error describing what's missing for API calls.
 func (c *Config) Validate() error {
 	switch {
 	case c.URL == "":

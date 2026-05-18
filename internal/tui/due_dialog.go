@@ -11,20 +11,14 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// dueDialog is the foreground modal used to pick a due date+time. Each of the
-// five fields (year, month, day, hour, minute) is edited independently with
-// arrow keys or by typing digits directly. Day is automatically clamped to the
-// chosen month's length.
 type dueDialog struct {
 	year, month, day int
 	hour, minute     int
-	focus            int    // 0=year, 1=month, 2=day, 3=hour, 4=minute
-	buf              string // digits typed in the current field, reset on focus move
+	focus            int // 0=year, 1=month, 2=day, 3=hour, 4=minute
+	buf              string
 	accent           lipgloss.Color
 }
 
-// newDueDialog seeds the dialog from a card's existing due date (RFC3339) or,
-// if none, from the current local time rounded to the next hour at minute 0.
 func newDueDialog(current *string, accent lipgloss.Color) dueDialog {
 	d := dueDialog{accent: accent}
 	if current != nil && *current != "" {
@@ -41,21 +35,15 @@ func newDueDialog(current *string, accent lipgloss.Color) dueDialog {
 	return d
 }
 
-// daysInMonth returns the number of days in the dialog's current month/year,
-// handling leap years via the standard library. If month is transiently out
-// of range during typing it returns 31, the safest upper bound: callers use
-// this for day clamping, and a too-large bound means "do nothing" until the
-// month is committed to a valid value.
+// Returns 31 when month is out of range so callers don't accidentally clamp
+// day to a smaller value during transient typing states.
 func (d dueDialog) daysInMonth() int {
 	if d.month < 1 || d.month > 12 {
 		return 31
 	}
-	// Day 0 of (month+1) is the last day of month.
 	return time.Date(d.year, time.Month(d.month+1), 0, 0, 0, 0, 0, time.UTC).Day()
 }
 
-// clampDay shrinks the day field if it now exceeds the days in the selected
-// month (e.g. Jan 31 -> Feb gets clamped to Feb 28/29).
 func (d *dueDialog) clampDay() {
 	max := d.daysInMonth()
 	if d.day > max {
@@ -66,12 +54,8 @@ func (d *dueDialog) clampDay() {
 	}
 }
 
-// adjust nudges the focused field by delta, wrapping the value to its valid
-// range. Day wraps within the current month, month wraps 1..12, hour wraps
-// 0..23, minute wraps 0..59. Year is kept >= 1900.
-//
-// The typed-digit buffer is cleared because the nudged value is no longer
-// related to whatever the user was typing.
+// Clears buf so a subsequent digit doesn't get concatenated onto the
+// pre-nudge typed value.
 func (d *dueDialog) adjust(delta int) {
 	d.buf = ""
 	switch d.focus {
@@ -101,9 +85,6 @@ func wrap(v, mod int) int {
 	return v
 }
 
-// moveFocus shifts the focus by delta (left/right), clamped to 0..4. The
-// current field is committed first so partial typed values like "0" in the
-// month field get normalised to "1".
 func (d *dueDialog) moveFocus(delta int) {
 	d.commit()
 	d.focus += delta
@@ -115,9 +96,8 @@ func (d *dueDialog) moveFocus(delta int) {
 	}
 }
 
-// commit clears any pending typed digits and snaps year/month/day to valid
-// minimums (they can transiently be < 1 during typing). Year=0 specifically
-// would serialise as "0000-01-01T..." and the Deck server rejects that.
+// Year=0 would serialise as "0000-01-01T..." which Deck rejects; month/day
+// can transiently be 0 mid-typing.
 func (d *dueDialog) commit() {
 	d.buf = ""
 	if d.year < 1 {
@@ -132,7 +112,6 @@ func (d *dueDialog) commit() {
 	d.clampDay()
 }
 
-// fieldMaxDigits returns how many digits the focused field can hold.
 func (d *dueDialog) fieldMaxDigits(i int) int {
 	if i == 0 {
 		return 4
@@ -140,10 +119,6 @@ func (d *dueDialog) fieldMaxDigits(i int) int {
 	return 2
 }
 
-// typeDigit handles a "0".."9" keypress on the focused field. It builds up
-// a typed value digit-by-digit (replacing the field's display), rejects
-// values that overflow the field's range, and auto-advances to the next
-// field once the current one is full.
 func (d *dueDialog) typeDigit(c rune) {
 	if c < '0' || c > '9' {
 		return
@@ -151,7 +126,6 @@ func (d *dueDialog) typeDigit(c rune) {
 	digit := string(c)
 	max := d.fieldMaxDigits(d.focus)
 
-	// Append (or replace if the buffer is already full).
 	if len(d.buf) >= max {
 		d.buf = digit
 	} else {
@@ -159,23 +133,18 @@ func (d *dueDialog) typeDigit(c rune) {
 	}
 	v, _ := strconv.Atoi(d.buf)
 
-	// If accumulating the digits overflows the field's range, throw away
-	// what we had and use just the new digit. Example: hour=14 + "5" tried as
-	// 145 -> rejected -> reset to 5.
+	// Concatenated value out of range, start over with just the new digit
+	// (e.g. hour=2 then '5' tried as 25 -> rejected -> hour=5).
 	if !d.acceptValue(v) {
 		d.buf = digit
-		_ = d.acceptValue(int(c - '0')) // single digit 0..9 always fits
+		_ = d.acceptValue(int(c - '0'))
 	}
 
-	// Auto-advance once a field is full so users can fluently type
-	// "20271231 1430" to set everything.
 	if len(d.buf) >= max && d.focus < 4 {
 		d.moveFocus(+1)
 	}
 }
 
-// acceptValue tries to set the focused field to v. Returns false if v is out
-// of range for that field (caller can decide to retry with a smaller value).
 func (d *dueDialog) acceptValue(v int) bool {
 	switch d.focus {
 	case 0:
@@ -213,8 +182,6 @@ func (d *dueDialog) acceptValue(v int) bool {
 	return false
 }
 
-// backspace removes the last typed digit from the focused field. With no
-// buffered digits it leaves the value alone.
 func (d *dueDialog) backspace() {
 	if d.buf == "" {
 		return
@@ -227,16 +194,13 @@ func (d *dueDialog) backspace() {
 	d.acceptValue(v)
 }
 
-// rfc3339 formats the dialog's date+time as an RFC3339 string in the user's
-// local timezone, ready to send to the Deck API.
 func (d dueDialog) rfc3339() string {
 	t := time.Date(d.year, time.Month(d.month), d.day, d.hour, d.minute, 0, 0, time.Local)
 	return t.Format(time.RFC3339)
 }
 
-// fieldDisplay returns the right-aligned digit string the focused field shows
-// while the user is typing, or the zero-padded committed value otherwise.
-// Month and day can transiently be 0 during typing; that's rendered as "00".
+// While typing, the buffer is shown right-aligned so partial input doesn't
+// look like leading zeros.
 func (d dueDialog) fieldDisplay(i int) string {
 	max := d.fieldMaxDigits(i)
 	if d.focus == i && d.buf != "" {
@@ -260,16 +224,12 @@ func (d dueDialog) fieldDisplay(i int) string {
 // "mon" / "min" keep every label inside its 2-digit field's 4-char cell.
 var dueDialogLabels = [5]string{"year", "mon", "day", "hr", "min"}
 
-// view renders the dialog as a centered modal block. The caller is expected to
-// place it on top of the screen with lipgloss.Place.
 func (d dueDialog) view() string {
 	field := lipgloss.NewStyle().Padding(0, 1).Bold(true)
 	focused := field.
 		Foreground(foregroundFor(d.accent)).
 		Background(d.accent)
 
-	// Render each cell once and remember its visual width so labels can be
-	// centred under their cell without paying for a second render.
 	var cells [5]string
 	var widths [5]int
 	for i := 0; i < 5; i++ {

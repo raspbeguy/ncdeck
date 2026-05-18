@@ -4,8 +4,6 @@ package tui
 
 import "github.com/raspbeguy/ncdeck/internal/api"
 
-// Cross-screen messages.
-
 type boardsLoadedMsg struct {
 	boards []api.Board
 }
@@ -15,8 +13,6 @@ type boardOpenedMsg struct {
 	color   string // empty when launched directly without going through the picker
 }
 
-// boardInfoMsg carries the board's metadata (currently the colour) for the
-// kanban screen to use for focus highlights when launched directly.
 type boardInfoMsg struct {
 	boardID int
 	color   string
@@ -31,8 +27,8 @@ type cardLoadedMsg struct {
 	card *api.Card
 }
 
-// openCardMsg uses an already-loaded card to switch to the detail screen
-// without re-fetching from the server.
+// openCardMsg skips a GetCard round-trip by reusing the card already loaded
+// for the kanban view.
 type openCardMsg struct {
 	boardID int
 	card    *api.Card

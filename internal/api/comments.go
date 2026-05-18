@@ -11,11 +11,9 @@ import (
 	"strings"
 )
 
-// ocsCommentsBase points at the OCS routes that wrap the Nextcloud comments app
-// for Deck card objects.
+// Comments live behind OCS routes, not the regular Deck v1 path.
 const ocsCommentsBase = "/ocs/v2.php/apps/deck/api/v1.0"
 
-// ocsEnvelope is the standard OCS response wrapper.
 type ocsEnvelope[T any] struct {
 	OCS struct {
 		Meta struct {
@@ -35,7 +33,6 @@ func (c *Client) ocsURL(path string, q url.Values) string {
 	return u
 }
 
-// ListComments returns the comments on a card. limit/offset paginate the result.
 func (c *Client) ListComments(ctx context.Context, cardID, limit, offset int) ([]Comment, error) {
 	q := url.Values{}
 	q.Set("format", "json")
@@ -63,7 +60,6 @@ func (c *Client) ListComments(ctx context.Context, cardID, limit, offset int) ([
 	return out, nil
 }
 
-// AddComment posts a new comment to a card.
 func (c *Client) AddComment(ctx context.Context, cardID int, message string, replyTo int) (*Comment, error) {
 	body := map[string]any{"message": message}
 	if replyTo > 0 {

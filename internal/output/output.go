@@ -11,7 +11,6 @@ import (
 	"text/tabwriter"
 )
 
-// JSON prints v as indented JSON to w (or os.Stdout when w is nil).
 func JSON(w io.Writer, v any) error {
 	if w == nil {
 		w = os.Stdout
@@ -21,8 +20,6 @@ func JSON(w io.Writer, v any) error {
 	return enc.Encode(v)
 }
 
-// Table writes a header + rows to w as an aligned tab-separated table.
-// rows is a slice of slices; each inner slice's length should match len(header).
 func Table(w io.Writer, header []string, rows [][]string) {
 	if w == nil {
 		w = os.Stdout

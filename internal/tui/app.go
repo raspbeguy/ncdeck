@@ -19,7 +19,6 @@ const (
 	screenCard
 )
 
-// Model is the root bubbletea model.
 type Model struct {
 	ctx    context.Context
 	client *api.Client
@@ -38,7 +37,7 @@ type Model struct {
 	errStr  string
 }
 
-// Run launches the TUI. initialBoardID may be 0 to start at the picker.
+// initialBoardID 0 starts at the picker; non-zero jumps straight to that board.
 func Run(ctx context.Context, c *api.Client, initialBoardID int) error {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -172,14 +171,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyMsg:
-		// Global keys
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
 		}
 	}
 
-	// Route to active screen.
 	switch m.active {
 	case screenBoards:
 		var cmd tea.Cmd
@@ -229,15 +226,12 @@ func (m *Model) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
 }
 
-// --- async loaders -------------------------------------------------------
-
 func (m *Model) loadBoards() tea.Cmd {
 	return func() tea.Msg {
 		bs, err := m.client.ListBoards(m.ctx, false)
 		if err != nil {
 			return errMsg{err}
 		}
-		// Filter archived for the picker by default.
 		filt := make([]api.Board, 0, len(bs))
 		for _, b := range bs {
 			if !b.Archived {
@@ -272,8 +266,7 @@ func (m *Model) loadComments(cardID int) tea.Cmd {
 	return func() tea.Msg {
 		cs, err := m.client.ListComments(m.ctx, cardID, 50, 0)
 		if err != nil {
-			// Comments are non-fatal, return empty.
-			return commentsLoadedMsg{cardID, nil}
+			return commentsLoadedMsg{cardID, nil} // non-fatal
 		}
 		return commentsLoadedMsg{cardID, cs}
 	}
@@ -283,8 +276,7 @@ func (m *Model) loadBoardInfo(boardID int) tea.Cmd {
 	return func() tea.Msg {
 		b, err := m.client.GetBoard(m.ctx, boardID)
 		if err != nil {
-			// Non-fatal: just keep the default accent.
-			return boardInfoMsg{boardID: boardID, color: ""}
+			return boardInfoMsg{boardID: boardID, color: ""} // non-fatal, keep default accent
 		}
 		return boardInfoMsg{boardID: boardID, color: b.Color}
 	}
@@ -294,8 +286,8 @@ func (m *Model) loadAttachments(boardID, stackID, cardID int) tea.Cmd {
 	return func() tea.Msg {
 		as, err := m.client.ListAttachments(m.ctx, boardID, stackID, cardID)
 		if err != nil {
-			// 404 is benign (cards with no attachments), but anything else
-			// (401/403/network) is a real problem the user should see.
+			// 404 means "no attachments"; anything else (auth, network) is
+			// a real failure the user should see.
 			if ae, ok := err.(*api.APIError); ok && ae.Status == 404 {
 				return attachmentsLoadedMsg{cardID, nil}
 			}
@@ -305,7 +297,6 @@ func (m *Model) loadAttachments(boardID, stackID, cardID int) tea.Cmd {
 	}
 }
 
-// setStatus sets a transient status line shown in the header.
 func (m *Model) setStatus(text string) {
 	m.status = text
 }

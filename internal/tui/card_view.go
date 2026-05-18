@@ -136,7 +136,6 @@ func (m *cardModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 	case cardModeEditDue:
 		if km, ok := msg.(tea.KeyMsg); ok {
 			s := km.String()
-			// Single digits set the focused field directly.
 			if len(s) == 1 && s[0] >= '0' && s[0] <= '9' {
 				m.due.typeDigit(rune(s[0]))
 				return root, nil
@@ -266,8 +265,6 @@ func (m *cardModel) View(width, height int) string {
 	}
 }
 
-// dueAccent picks the colour used to highlight the focused field and the
-// modal border, matching the kanban accent when available.
 func dueAccent(root *Model) lipgloss.Color {
 	if root.kanban != nil && root.kanban.boardColor != "" {
 		return lipgloss.Color("#" + root.kanban.boardColor)
@@ -295,10 +292,8 @@ func (m *cardModel) saveDescription(root *Model, desc string) tea.Cmd {
 	}
 }
 
-// saveDueDate updates the card's due date. Passing nil clears it (the server
-// receives JSON null and removes the date); a pointer to an RFC3339 string
-// sets it. The dialog produces a guaranteed-valid value via dueDialog.rfc3339,
-// so this function does not re-parse.
+// nil due sends JSON null (clear). The dialog guarantees RFC3339 output, so
+// no re-parsing.
 func (m *cardModel) saveDueDate(root *Model, due *string) tea.Cmd {
 	in := api.UpdateCardInput{
 		Title:       m.card.Title,

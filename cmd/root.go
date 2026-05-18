@@ -28,8 +28,7 @@ var rootCmd = &cobra.Command{
 	Version:      "dev",
 	SilenceUsage: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		// --no-color and the NO_COLOR convention (https://no-color.org) both
-		// downgrade lipgloss to ASCII so any subcommand or the TUI honour it.
+		// https://no-color.org convention.
 		if flagNoColor || os.Getenv("NO_COLOR") != "" {
 			lipgloss.SetColorProfile(termenv.Ascii)
 		}
@@ -37,13 +36,11 @@ var rootCmd = &cobra.Command{
 	},
 }
 
-// SetVersion is called from main with the values injected at build time by
-// GoReleaser. The values flow into cobra's built-in --version flag.
+// Set by main from GoReleaser-injected ldflags; flows into cobra's --version.
 func SetVersion(v, commit, date string) {
 	rootCmd.Version = fmt.Sprintf("%s (commit %s, built %s)", v, commit, date)
 }
 
-// Execute runs the root command.
 func Execute() error {
 	return rootCmd.ExecuteContext(context.Background())
 }
@@ -55,7 +52,6 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&flagNoColor, "no-color", false, "disable ANSI color output (also honours NO_COLOR)")
 }
 
-// loadConfig honors --config and applies env-var/flag overlays.
 func loadConfig() (*config.Config, error) {
 	cfg, err := config.Load(flagConfig)
 	if err != nil {
@@ -67,7 +63,6 @@ func loadConfig() (*config.Config, error) {
 	return cfg, nil
 }
 
-// newClient returns an authenticated API client or an error if the config is incomplete.
 func newClient() (*api.Client, error) {
 	cfg, err := loadConfig()
 	if err != nil {

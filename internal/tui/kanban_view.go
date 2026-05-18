@@ -14,49 +14,31 @@ import (
 	"github.com/raspbeguy/ncdeck/internal/api"
 )
 
-// Layout constants for the kanban view.
 const (
-	// kanbanChromeRows is rows reserved for header + help line + their padding,
-	// subtracted from the terminal height before laying out columns.
-	kanbanChromeRows = 4
-	// kanbanColGutter is extra horizontal space added around each column for
-	// the padding wrapper; used when deciding how many columns fit.
-	kanbanColGutter = 2
-	// kanbanMinBodyRows is the smallest body height we'll render with.
-	kanbanMinBodyRows = 5
-	// kanbanScrollHintRows reserves room for the "↑ N more" / "↓ N more" hints
-	// so they don't push card content off-screen.
-	kanbanScrollHintRows = 2
-	// kanbanMinAvailRows is the smallest cards-area height we'll attempt.
-	kanbanMinAvailRows = 3
-	// kanbanDefaultColWidth is the per-column character width.
+	kanbanChromeRows      = 4 // header + help + spacing
+	kanbanColGutter       = 2
+	kanbanMinBodyRows     = 5
+	kanbanScrollHintRows  = 2 // reserved for "↑/↓ N more"
+	kanbanMinAvailRows    = 3
 	kanbanDefaultColWidth = 28
 )
 
-// kanbanModel renders horizontally scrolling columns of cards for a board.
 type kanbanModel struct {
 	boardID    int
-	boardColor string // hex without #, empty until loaded
+	boardColor string
 	stacks     []api.Stack
-	// cursor: index into stacks for the focused column, index into that stack's
-	// cards for the focused card.
-	stackIdx int
-	cardIdx  int
-	// moveMode is true once the user pressed 'm', next h/l + enter moves the card.
+	stackIdx   int
+	cardIdx    int
 	moveMode   bool
 	moveTarget int
 
-	// inline form: "card" for new card, "stack" for new stack, "" for none.
-	formKind string
+	formKind string // "card" / "stack" / "" for none
 	form     textinput.Model
 
-	// horizontal scrolling offset (in columns)
-	scroll int
+	scroll int // horizontal column offset
 
-	// topIdx is the index of the first visible card within the focused stack.
-	// It only moves when the cursor would otherwise leave the visible window,
-	// so cursor and card positions stay stable when navigating in the middle
-	// of a long column.
+	// topIdx only moves when the cursor would leave the visible window,
+	// keeping cursor and card positions stable mid-column.
 	topIdx int
 
 	colWidth int
@@ -67,7 +49,7 @@ func newKanbanModel(boardID int) *kanbanModel {
 }
 
 func (k *kanbanModel) setStacks(stacks []api.Stack) {
-	// Stable-sort stacks by Order so layout matches the web UI.
+	// Order matches the web UI's stable sort.
 	sort.SliceStable(stacks, func(i, j int) bool { return stacks[i].Order < stacks[j].Order })
 	for i := range stacks {
 		sort.SliceStable(stacks[i].Cards, func(a, b int) bool {
@@ -215,11 +197,8 @@ func (k *kanbanModel) curStack() *api.Stack {
 	return &k.stacks[k.stackIdx]
 }
 
-// reorderWithin shifts the focused card up (-1) or down (+1) one slot in its
-// own stack. The Deck server interprets ReorderInput.Order as the destination
-// index in the sorted column, so passing cardIdx+delta is enough; the server
-// renormalises every other card's order. The cursor follows the moved card so
-// the user can chain J/K presses.
+// Deck interprets Order as the destination index in the sorted column and
+// renormalises everything else; passing cardIdx+delta is enough.
 func (k *kanbanModel) reorderWithin(root *Model, delta int) tea.Cmd {
 	s := k.curStack()
 	if s == nil {
@@ -330,13 +309,11 @@ func (k *kanbanModel) View(width, height int) string {
 		bodyHeight = kanbanMinBodyRows
 	}
 
-	// Determine how many stacks fit horizontally.
 	colW := k.colWidth
 	maxCols := width / (colW + kanbanColGutter)
 	if maxCols < 1 {
 		maxCols = 1
 	}
-	// Auto-scroll so the focused stack is visible.
 	if k.stackIdx < k.scroll {
 		k.scroll = k.stackIdx
 	}
@@ -384,8 +361,6 @@ func (k *kanbanModel) renderStack(s api.Stack, focused, highlight bool, w, h int
 		hdr = stackHeaderStyle.Foreground(accent).Underline(true).Width(w).Render(fmt.Sprintf("%s (%d)", s.Title, len(s.Cards)))
 	}
 
-	// Render every card once and record its actual rendered height, so we can
-	// pick a vertical window that keeps the focused card visible.
 	rendered := make([]string, len(s.Cards))
 	heights := make([]int, len(s.Cards))
 	for i, c := range s.Cards {
@@ -394,8 +369,6 @@ func (k *kanbanModel) renderStack(s api.Stack, focused, highlight bool, w, h int
 		heights[i] = lipgloss.Height(rendered[i])
 	}
 
-	// Available rows for cards beneath the header. Reserve rows for potential
-	// "↑ N more" / "↓ N more" hints so they don't push content off-screen.
 	avail := h - lipgloss.Height(hdr) - kanbanScrollHintRows
 	if avail < kanbanMinAvailRows {
 		avail = kanbanMinAvailRows
@@ -404,11 +377,9 @@ func (k *kanbanModel) renderStack(s api.Stack, focused, highlight bool, w, h int
 	start, end := 0, len(rendered)
 	switch {
 	case len(rendered) == 0:
-		// nothing to do
 	case focused:
-		// Anchor on k.topIdx, advance it forward only when the cursor would
-		// otherwise fall off the bottom of the visible window. Pressing 'k'
-		// already pulls topIdx back via the Update handler.
+		// Advance topIdx until the cursor fits; the 'k' handler already
+		// pulls it back when the cursor moves above the window.
 		if k.topIdx > k.cardIdx {
 			k.topIdx = k.cardIdx
 		}
@@ -436,7 +407,6 @@ func (k *kanbanModel) renderStack(s api.Stack, focused, highlight bool, w, h int
 			k.topIdx++
 		}
 	default:
-		// Non-focused stacks: just show from the top, truncating if needed.
 		used := 0
 		end = 0
 		for end < len(rendered) && used+heights[end] <= avail {
@@ -444,7 +414,7 @@ func (k *kanbanModel) renderStack(s api.Stack, focused, highlight bool, w, h int
 			end++
 		}
 		if end == 0 && len(rendered) > 0 {
-			end = 1 // always show at least one card
+			end = 1
 		}
 	}
 
