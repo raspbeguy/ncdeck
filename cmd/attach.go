@@ -19,20 +19,20 @@ var attachCmd = &cobra.Command{
 var attachDownloadOut string
 
 var attachListCmd = &cobra.Command{
-	Use:   "ls <cardID>",
+	Use:     "ls <boardID> <stackID> <cardID>",
 	Aliases: []string{"list"},
-	Short: "List attachments on a card",
-	Args:  cobra.ExactArgs(1),
+	Short:   "List attachments on a card",
+	Args:    cobra.ExactArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cardID, err := strconv.Atoi(args[0])
+		boardID, stackID, cardID, err := parseTripleID(args)
 		if err != nil {
-			return fmt.Errorf("invalid card id %q", args[0])
+			return err
 		}
 		c, err := newClient()
 		if err != nil {
 			return err
 		}
-		a, err := c.ListAttachments(cmd.Context(), cardID)
+		a, err := c.ListAttachments(cmd.Context(), boardID, stackID, cardID)
 		if err != nil {
 			return err
 		}
@@ -49,42 +49,42 @@ var attachListCmd = &cobra.Command{
 }
 
 var attachUploadCmd = &cobra.Command{
-	Use:   "upload <cardID> <file>",
+	Use:   "upload <boardID> <stackID> <cardID> <file>",
 	Short: "Upload a local file as a card attachment",
-	Args:  cobra.ExactArgs(2),
+	Args:  cobra.ExactArgs(4),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cardID, err := strconv.Atoi(args[0])
+		boardID, stackID, cardID, err := parseTripleID(args[:3])
 		if err != nil {
-			return fmt.Errorf("invalid card id %q", args[0])
+			return err
 		}
 		c, err := newClient()
 		if err != nil {
 			return err
 		}
-		a, err := c.UploadAttachment(cmd.Context(), cardID, args[1])
+		a, err := c.UploadAttachment(cmd.Context(), boardID, stackID, cardID, args[3])
 		if err != nil {
 			return err
 		}
 		if flagJSON {
 			return output.JSON(cmd.OutOrStdout(), a)
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Uploaded %s as attachment %d\n", args[1], a.ID)
+		fmt.Fprintf(cmd.OutOrStdout(), "Uploaded %s as attachment %d\n", args[3], a.ID)
 		return nil
 	},
 }
 
 var attachDownloadCmd = &cobra.Command{
-	Use:   "download <cardID> <attachmentID>",
+	Use:   "download <boardID> <stackID> <cardID> <attachmentID>",
 	Short: "Download an attachment",
-	Args:  cobra.ExactArgs(2),
+	Args:  cobra.ExactArgs(4),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cardID, err := strconv.Atoi(args[0])
+		boardID, stackID, cardID, err := parseTripleID(args[:3])
 		if err != nil {
-			return fmt.Errorf("invalid card id %q", args[0])
+			return err
 		}
-		attID, err := strconv.Atoi(args[1])
+		attID, err := strconv.Atoi(args[3])
 		if err != nil {
-			return fmt.Errorf("invalid attachment id %q", args[1])
+			return fmt.Errorf("invalid attachment id %q", args[3])
 		}
 		c, err := newClient()
 		if err != nil {
@@ -99,7 +99,7 @@ var attachDownloadCmd = &cobra.Command{
 			defer f.Close()
 			dst = f
 		}
-		return c.DownloadAttachment(cmd.Context(), cardID, attID, dst)
+		return c.DownloadAttachment(cmd.Context(), boardID, stackID, cardID, attID, dst)
 	},
 }
 

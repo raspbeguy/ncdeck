@@ -98,9 +98,9 @@ ncdeck label delete <boardID> <labelID> [--yes]
 ncdeck comment ls <cardID> [--limit N] [--offset N]
 ncdeck comment add <cardID> "message"
 
-ncdeck attach ls <cardID>
-ncdeck attach upload <cardID> <file>
-ncdeck attach download <cardID> <attachmentID> [-o PATH]
+ncdeck attach ls <boardID> <stackID> <cardID>
+ncdeck attach upload <boardID> <stackID> <cardID> <file>
+ncdeck attach download <boardID> <stackID> <cardID> <attachmentID> [-o PATH]
 
 ncdeck tui [boardID]
 ```

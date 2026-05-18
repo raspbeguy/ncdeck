@@ -138,7 +138,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(
 					m.loadCard(m.card.boardID, m.card.stackID, m.card.cardID),
 					m.loadComments(m.card.cardID),
-					m.loadAttachments(m.card.cardID),
+					m.loadAttachments(m.card.boardID, m.card.stackID, m.card.cardID),
 				)
 			}
 		}
@@ -151,7 +151,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.card.boardID = msg.boardID
 		m.card.setCard(msg.card, m.width, m.height)
-		return m, tea.Batch(m.loadComments(msg.card.ID), m.loadAttachments(msg.card.ID))
+		return m, tea.Batch(m.loadComments(msg.card.ID), m.loadAttachments(msg.boardID, msg.card.StackID, msg.card.ID))
 	case cardLoadedMsg:
 		m.loading = false
 		m.errStr = ""
@@ -160,7 +160,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.card = &cardModel{}
 		}
 		m.card.setCard(msg.card, m.width, m.height)
-		return m, tea.Batch(m.loadComments(msg.card.ID), m.loadAttachments(msg.card.ID))
+		return m, tea.Batch(m.loadComments(msg.card.ID), m.loadAttachments(m.card.boardID, msg.card.StackID, msg.card.ID))
 	case commentsLoadedMsg:
 		if m.card != nil && m.card.cardID == msg.cardID {
 			m.card.setComments(msg.comments)
@@ -290,9 +290,9 @@ func (m *Model) loadBoardInfo(boardID int) tea.Cmd {
 	}
 }
 
-func (m *Model) loadAttachments(cardID int) tea.Cmd {
+func (m *Model) loadAttachments(boardID, stackID, cardID int) tea.Cmd {
 	return func() tea.Msg {
-		as, err := m.client.ListAttachments(m.ctx, cardID)
+		as, err := m.client.ListAttachments(m.ctx, boardID, stackID, cardID)
 		if err != nil {
 			// 404 is benign (cards with no attachments), but anything else
 			// (401/403/network) is a real problem the user should see.

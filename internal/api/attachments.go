@@ -12,11 +12,17 @@ import (
 	"path/filepath"
 )
 
+// attachmentsBase returns the API path prefix for a card's attachments. The
+// Deck API scopes attachments under their board+stack+card, not directly under
+// /cards/{id} (which 405s on GET).
+func attachmentsBase(boardID, stackID, cardID int) string {
+	return fmt.Sprintf("/boards/%d/stacks/%d/cards/%d/attachments", boardID, stackID, cardID)
+}
+
 // ListAttachments returns the file attachments on a card.
-func (c *Client) ListAttachments(ctx context.Context, cardID int) ([]Attachment, error) {
+func (c *Client) ListAttachments(ctx context.Context, boardID, stackID, cardID int) ([]Attachment, error) {
 	var out []Attachment
-	path := fmt.Sprintf("/cards/%d/attachments", cardID)
-	if err := c.do(ctx, "GET", path, nil, &out); err != nil {
+	if err := c.do(ctx, "GET", attachmentsBase(boardID, stackID, cardID), nil, &out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -25,7 +31,7 @@ func (c *Client) ListAttachments(ctx context.Context, cardID int) ([]Attachment,
 // UploadAttachment uploads a local file as an attachment on a card. The file
 // is streamed through an io.Pipe so the whole payload is never buffered in
 // memory.
-func (c *Client) UploadAttachment(ctx context.Context, cardID int, file string) (*Attachment, error) {
+func (c *Client) UploadAttachment(ctx context.Context, boardID, stackID, cardID int, file string) (*Attachment, error) {
 	f, err := os.Open(file)
 	if err != nil {
 		return nil, err
@@ -60,16 +66,15 @@ func (c *Client) UploadAttachment(ctx context.Context, cardID int, file string) 
 	}()
 
 	var out Attachment
-	path := fmt.Sprintf("/cards/%d/attachments", cardID)
-	if err := c.doMultipart(ctx, "POST", path, contentType, pr, &out); err != nil {
+	if err := c.doMultipart(ctx, "POST", attachmentsBase(boardID, stackID, cardID), contentType, pr, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
 }
 
 // DownloadAttachment streams the raw bytes of an attachment to dst.
-func (c *Client) DownloadAttachment(ctx context.Context, cardID, attachmentID int, dst io.Writer) error {
-	url := c.BaseURL + apiBase + fmt.Sprintf("/cards/%d/attachments/%d", cardID, attachmentID)
+func (c *Client) DownloadAttachment(ctx context.Context, boardID, stackID, cardID, attachmentID int, dst io.Writer) error {
+	url := c.BaseURL + apiBase + fmt.Sprintf("%s/%d", attachmentsBase(boardID, stackID, cardID), attachmentID)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return err
@@ -90,6 +95,6 @@ func (c *Client) DownloadAttachment(ctx context.Context, cardID, attachmentID in
 }
 
 // DeleteAttachment removes an attachment from a card.
-func (c *Client) DeleteAttachment(ctx context.Context, cardID, attachmentID int) error {
-	return c.do(ctx, "DELETE", fmt.Sprintf("/cards/%d/attachments/%d", cardID, attachmentID), nil, nil)
+func (c *Client) DeleteAttachment(ctx context.Context, boardID, stackID, cardID, attachmentID int) error {
+	return c.do(ctx, "DELETE", fmt.Sprintf("%s/%d", attachmentsBase(boardID, stackID, cardID), attachmentID), nil, nil)
 }

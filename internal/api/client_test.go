@@ -165,6 +165,10 @@ func TestUploadAttachmentStreams(t *testing.T) {
 	tmp.Close()
 
 	c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		want := "/index.php/apps/deck/api/v1.0/boards/10/stacks/20/cards/42/attachments"
+		if r.URL.Path != want {
+			t.Errorf("path: got %q, want %q", r.URL.Path, want)
+		}
 		if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
 			t.Errorf("bad content-type: %s", r.Header.Get("Content-Type"))
 		}
@@ -191,7 +195,7 @@ func TestUploadAttachmentStreams(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(Attachment{ID: 5, Data: hdr.Filename})
 	})
-	a, err := c.UploadAttachment(context.Background(), 42, tmp.Name())
+	a, err := c.UploadAttachment(context.Background(), 10, 20, 42, tmp.Name())
 	if err != nil {
 		t.Fatal(err)
 	}
