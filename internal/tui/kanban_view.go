@@ -33,6 +33,12 @@ type kanbanModel struct {
 	// horizontal scrolling offset (in columns)
 	scroll int
 
+	// topIdx is the index of the first visible card within the focused stack.
+	// It only moves when the cursor would otherwise leave the visible window,
+	// so cursor and card positions stay stable when navigating in the middle
+	// of a long column.
+	topIdx int
+
 	colWidth int
 }
 
@@ -110,6 +116,7 @@ func (k *kanbanModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 			} else if k.stackIdx > 0 {
 				k.stackIdx--
 				k.cardIdx = 0
+				k.topIdx = 0
 			}
 		case "l", "right":
 			if k.moveMode {
@@ -119,6 +126,7 @@ func (k *kanbanModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 			} else if k.stackIdx < len(k.stacks)-1 {
 				k.stackIdx++
 				k.cardIdx = 0
+				k.topIdx = 0
 			}
 		case "j", "down":
 			if s := k.curStack(); s != nil && k.cardIdx < len(s.Cards)-1 {
@@ -127,6 +135,9 @@ func (k *kanbanModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 		case "k", "up":
 			if k.cardIdx > 0 {
 				k.cardIdx--
+				if k.cardIdx < k.topIdx {
+					k.topIdx = k.cardIdx
+				}
 			}
 		case "enter":
 			if k.moveMode {
@@ -328,21 +339,34 @@ func (k *kanbanModel) renderStack(s api.Stack, focused, highlight bool, w, h int
 	case len(rendered) == 0:
 		// nothing to do
 	case focused:
-		// Anchor on the focused card, then expand downward, then upward,
-		// to keep the cursor on-screen even in a tall column.
-		cursor := k.cardIdx
-		if cursor >= len(rendered) {
-			cursor = len(rendered) - 1
+		// Anchor on k.topIdx, advance it forward only when the cursor would
+		// otherwise fall off the bottom of the visible window. Pressing 'k'
+		// already pulls topIdx back via the Update handler.
+		if k.topIdx > k.cardIdx {
+			k.topIdx = k.cardIdx
 		}
-		used := heights[cursor]
-		start, end = cursor, cursor+1
-		for end < len(rendered) && used+heights[end] <= avail {
-			used += heights[end]
-			end++
+		if k.topIdx >= len(rendered) {
+			k.topIdx = len(rendered) - 1
 		}
-		for start > 0 && used+heights[start-1] <= avail {
-			start--
-			used += heights[start]
+		for {
+			used := 0
+			fits := false
+			last := k.topIdx
+			for i := k.topIdx; i < len(rendered); i++ {
+				if used+heights[i] > avail {
+					break
+				}
+				used += heights[i]
+				last = i
+				if i == k.cardIdx {
+					fits = true
+				}
+			}
+			if fits || k.topIdx >= k.cardIdx {
+				start, end = k.topIdx, last+1
+				break
+			}
+			k.topIdx++
 		}
 	default:
 		// Non-focused stacks: just show from the top, truncating if needed.
