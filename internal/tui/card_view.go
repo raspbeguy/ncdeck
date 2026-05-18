@@ -35,7 +35,7 @@ type cardModel struct {
 	vp       viewport.Model
 	editor   textarea.Model
 	commentI textinput.Model
-	dueI     textinput.Model
+	due      dueDialog
 	mode     cardMode
 }
 
@@ -134,21 +134,33 @@ func (m *cardModel) refreshBody() {
 func (m *cardModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 	switch m.mode {
 	case cardModeEditDue:
-		var cmd tea.Cmd
 		if km, ok := msg.(tea.KeyMsg); ok {
 			switch km.String() {
 			case "esc":
 				m.mode = cardModeView
 				return root, nil
 			case "enter":
-				raw := strings.TrimSpace(m.dueI.Value())
+				out := m.due.rfc3339()
 				m.mode = cardModeView
-				m.dueI.SetValue("")
-				return root, m.saveDueDate(root, raw)
+				return root, m.saveDueDate(root, out)
+			case "c":
+				m.mode = cardModeView
+				return root, m.saveDueDate(root, "")
+			case "left", "h", "shift+tab":
+				m.due.moveFocus(-1)
+			case "right", "l", "tab":
+				m.due.moveFocus(+1)
+			case "up", "k":
+				m.due.adjust(+1)
+			case "down", "j":
+				m.due.adjust(-1)
+			case "pgup":
+				m.due.adjust(+10)
+			case "pgdown":
+				m.due.adjust(-10)
 			}
 		}
-		m.dueI, cmd = m.dueI.Update(msg)
-		return root, cmd
+		return root, nil
 	case cardModeEditDescription:
 		var cmd tea.Cmd
 		if km, ok := msg.(tea.KeyMsg); ok {
@@ -213,18 +225,7 @@ func (m *cardModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 		case "D":
 			return root, m.toggleDone(root)
 		case "d":
-			ti := textinput.New()
-			ti.Placeholder = "YYYY-MM-DD or RFC3339 (empty to clear)"
-			ti.Focus()
-			ti.Width = m.vp.Width
-			if m.card.DueDate != nil && *m.card.DueDate != "" {
-				if t, err := time.Parse(time.RFC3339, *m.card.DueDate); err == nil {
-					ti.SetValue(t.Format("2006-01-02"))
-				} else {
-					ti.SetValue(*m.card.DueDate)
-				}
-			}
-			m.dueI = ti
+			m.due = newDueDialog(m.card.DueDate, dueAccent(root))
 			m.mode = cardModeEditDue
 			return root, nil
 		}
@@ -238,6 +239,9 @@ func (m *cardModel) View(width, height int) string {
 	if m.card == nil {
 		return ""
 	}
+	if m.mode == cardModeEditDue {
+		return placeModal(width, height, m.due.view())
+	}
 	box := modalStyle.Render(m.vp.View())
 	var footer string
 	switch m.mode {
@@ -247,13 +251,19 @@ func (m *cardModel) View(width, height int) string {
 	case cardModeAddComment:
 		footer = inputBoxStyle.Render(m.commentI.View()) + "\n" + helpStyle.Render("⏎ post  esc cancel")
 		return lipgloss.JoinVertical(lipgloss.Left, box, footer)
-	case cardModeEditDue:
-		footer = inputBoxStyle.Render(m.dueI.View()) + "\n" + helpStyle.Render("⏎ save  esc cancel (empty value clears the due date)")
-		return lipgloss.JoinVertical(lipgloss.Left, box, footer)
 	default:
 		footer = helpStyle.Render("e edit description  c comment  d due date  a archive  D done  r refresh  esc back  q quit")
 		return lipgloss.JoinVertical(lipgloss.Left, box, footer)
 	}
+}
+
+// dueAccent picks the colour used to highlight the focused field and the
+// modal border, matching the kanban accent when available.
+func dueAccent(root *Model) lipgloss.Color {
+	if root.kanban != nil && root.kanban.boardColor != "" {
+		return lipgloss.Color("#" + root.kanban.boardColor)
+	}
+	return colSelected
 }
 
 func (m *cardModel) saveDescription(root *Model, desc string) tea.Cmd {
