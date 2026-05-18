@@ -2,7 +2,54 @@
 
 package tui
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/raspbeguy/ncdeck/internal/api"
+)
+
+func TestSetStacks_SortsByOrder(t *testing.T) {
+	k := newKanbanModel(1)
+	k.setStacks([]api.Stack{
+		{ID: 3, Title: "C", Order: 2},
+		{ID: 1, Title: "A", Order: 0},
+		{ID: 2, Title: "B", Order: 1},
+	})
+	if k.stacks[0].Title != "A" || k.stacks[1].Title != "B" || k.stacks[2].Title != "C" {
+		t.Errorf("stacks order: got %v %v %v, want A B C",
+			k.stacks[0].Title, k.stacks[1].Title, k.stacks[2].Title)
+	}
+}
+
+func TestSetStacks_SortsCardsWithinStack(t *testing.T) {
+	k := newKanbanModel(1)
+	k.setStacks([]api.Stack{{
+		ID: 1, Title: "A", Order: 0, Cards: []api.Card{
+			{ID: 10, Title: "z", Order: 2},
+			{ID: 11, Title: "y", Order: 0},
+			{ID: 12, Title: "x", Order: 1},
+		},
+	}})
+	cards := k.stacks[0].Cards
+	if cards[0].Title != "y" || cards[1].Title != "x" || cards[2].Title != "z" {
+		t.Errorf("card order: got %s %s %s, want y x z", cards[0].Title, cards[1].Title, cards[2].Title)
+	}
+}
+
+func TestSetStacks_ClampsCursorWhenStackShrinks(t *testing.T) {
+	k := newKanbanModel(1)
+	k.stackIdx = 2
+	k.cardIdx = 5
+	k.setStacks([]api.Stack{
+		{ID: 1, Order: 0, Cards: []api.Card{{ID: 1}}},
+	})
+	if k.stackIdx != 0 {
+		t.Errorf("stackIdx not reset: got %d, want 0", k.stackIdx)
+	}
+	if k.cardIdx != 0 {
+		t.Errorf("cardIdx not reset: got %d, want 0", k.cardIdx)
+	}
+}
 
 func TestPickFocusedWindow_CursorFitsAtTop(t *testing.T) {
 	heights := []int{4, 4, 4, 4, 4}

@@ -55,10 +55,14 @@ func Start(ctx context.Context, baseURL string) (*LoginInit, error) {
 	return &out, nil
 }
 
+// pollInterval is var, not const, so tests can shorten it without changing
+// the Poll signature.
+var pollInterval = 2 * time.Second
+
 // Poll returns once the user finishes the browser flow (HTTP 200) or ctx is cancelled.
 // 404 means "not yet, keep polling".
 func Poll(ctx context.Context, info PollInfo) (*LoginResult, error) {
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 	form := url.Values{"token": []string{info.Token}}
 	for {

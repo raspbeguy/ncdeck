@@ -19,6 +19,10 @@ const (
 	screenCard
 )
 
+// chromeRows is what View()'s header + footer subtract from height before
+// handing the remainder to each screen.
+const chromeRows = 2
+
 type Model struct {
 	ctx    context.Context
 	client *api.Client
@@ -75,8 +79,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		if m.kanban != nil {
+			m.kanban.width = msg.Width
+		}
 		if m.card != nil {
-			m.card.resize(m.width, m.height-2)
+			m.card.resize(m.width, m.height-chromeRows)
 		}
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -142,9 +149,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case openCardMsg:
-		return m.enterCard(msg.boardID, msg.card)
+		return m, m.enterCard(msg.boardID, msg.card)
 	case cardLoadedMsg:
-		return m.enterCard(msg.boardID, msg.card)
+		return m, m.enterCard(msg.boardID, msg.card)
+	case reorderedMsg:
+		if m.kanban != nil && m.kanban.boardID == msg.boardID {
+			m.kanban.cardIdx = msg.newCardIdx
+			if m.kanban.cardIdx < m.kanban.topIdx {
+				m.kanban.topIdx = m.kanban.cardIdx
+			}
+			return m, m.loadStacks(msg.boardID)
+		}
+		return m, nil
 	case commentsLoadedMsg:
 		if m.card != nil && m.card.cardID == msg.cardID {
 			m.card.setComments(msg.comments)
@@ -193,14 +209,14 @@ func (m *Model) View() string {
 	var body string
 	switch m.active {
 	case screenBoards:
-		body = m.boards.View(m.width, m.height-2)
+		body = m.boards.View(m.width, m.height-chromeRows)
 	case screenKanban:
 		if m.kanban != nil {
-			body = m.kanban.View(m.width, m.height-2)
+			body = m.kanban.View(m.width, m.height-chromeRows)
 		}
 	case screenCard:
 		if m.card != nil {
-			body = m.card.View(m.width, m.height-2)
+			body = m.card.View(m.width, m.height-chromeRows)
 		}
 	}
 
@@ -293,7 +309,7 @@ func (m *Model) accent() lipgloss.Color {
 	return colSelected
 }
 
-func (m *Model) enterCard(boardID int, card *api.Card) (tea.Model, tea.Cmd) {
+func (m *Model) enterCard(boardID int, card *api.Card) tea.Cmd {
 	m.loading = false
 	m.errStr = ""
 	m.active = screenCard
@@ -301,8 +317,9 @@ func (m *Model) enterCard(boardID int, card *api.Card) (tea.Model, tea.Cmd) {
 		m.card = &cardModel{}
 	}
 	m.card.boardID = boardID
+	m.card.mode = cardModeView
 	m.card.setCard(card, m.width, m.height)
-	return m, tea.Batch(
+	return tea.Batch(
 		m.loadComments(card.ID),
 		m.loadAttachments(boardID, card.StackID, card.ID),
 	)

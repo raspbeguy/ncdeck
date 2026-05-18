@@ -80,4 +80,6 @@ var (
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colPrimary).
 			Padding(0, 1)
+
+	columnWrapStyle = lipgloss.NewStyle().Padding(0, 1)
 )

@@ -113,3 +113,53 @@ func TestModel_Accent_UsesBoardColorWhenAvailable(t *testing.T) {
 		t.Errorf("accent: got %q, want %q", got, "#deadbe")
 	}
 }
+
+func TestEnterCard_PopulatesAllFields(t *testing.T) {
+	m := newRoutingModel()
+	m.card = &cardModel{mode: cardModeEditDue} // simulate stale mode from prior card
+	card := &api.Card{ID: 42, StackID: 9, Title: "x"}
+	_ = m.enterCard(7, card)
+	if m.active != screenCard {
+		t.Errorf("active: got %d, want screenCard", m.active)
+	}
+	if m.card.boardID != 7 {
+		t.Errorf("boardID: got %d, want 7", m.card.boardID)
+	}
+	if m.card.cardID != 42 || m.card.stackID != 9 {
+		t.Errorf("ids: stack=%d card=%d, want 9/42", m.card.stackID, m.card.cardID)
+	}
+	if m.card.mode != cardModeView {
+		t.Errorf("mode: got %d, want cardModeView (stale mode must reset)", m.card.mode)
+	}
+	if m.loading {
+		t.Errorf("loading should be false after enterCard")
+	}
+}
+
+func TestReorderedMsg_MovesCursorAndReloads(t *testing.T) {
+	m := newRoutingModel()
+	m.active = screenKanban
+	m.kanban = newKanbanModel(7)
+	m.kanban.cardIdx = 3
+	m.kanban.topIdx = 2
+	_, cmd := m.Update(reorderedMsg{boardID: 7, newCardIdx: 1})
+	if m.kanban.cardIdx != 1 {
+		t.Errorf("cardIdx: got %d, want 1", m.kanban.cardIdx)
+	}
+	if m.kanban.topIdx != 1 {
+		t.Errorf("topIdx: got %d, want 1 (pulled back to match cursor)", m.kanban.topIdx)
+	}
+	if cmd == nil {
+		t.Errorf("expected a reload cmd to follow the cursor move")
+	}
+}
+
+func TestReorderedMsg_IgnoredForWrongBoard(t *testing.T) {
+	m := newRoutingModel()
+	m.kanban = newKanbanModel(7)
+	m.kanban.cardIdx = 5
+	_, _ = m.Update(reorderedMsg{boardID: 99, newCardIdx: 1})
+	if m.kanban.cardIdx != 5 {
+		t.Errorf("cardIdx should not change when boardID mismatches, got %d", m.kanban.cardIdx)
+	}
+}

@@ -52,3 +52,11 @@ func (e errMsg) Error() string { return e.err.Error() }
 type backMsg struct{}
 
 type refreshMsg struct{}
+
+// reorderedMsg lets the kanban move its cursor onto the moved card *after*
+// the server confirms, instead of optimistically moving it first and trying
+// to roll back on failure.
+type reorderedMsg struct {
+	boardID    int
+	newCardIdx int
+}

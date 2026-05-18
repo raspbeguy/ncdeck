@@ -41,6 +41,10 @@ type kanbanModel struct {
 	// keeping cursor and card positions stable mid-column.
 	topIdx int
 
+	// width is the last terminal width seen via WindowSizeMsg, used to size
+	// the inline form. 0 before the first resize event arrives.
+	width int
+
 	colWidth int
 }
 
@@ -199,6 +203,9 @@ func (k *kanbanModel) curStack() *api.Stack {
 
 // Deck interprets Order as the destination index in the sorted column and
 // renormalises everything else; passing cardIdx+delta is enough.
+//
+// Cursor moves only on success (via reorderedMsg) so a failed reorder doesn't
+// leave the cursor pointing at a different card than the user sees.
 func (k *kanbanModel) reorderWithin(root *Model, delta int) tea.Cmd {
 	s := k.curStack()
 	if s == nil {
@@ -210,19 +217,16 @@ func (k *kanbanModel) reorderWithin(root *Model, delta int) tea.Cmd {
 	}
 	c := s.Cards[k.cardIdx]
 	stackID := s.ID
-	k.cardIdx = target
-	if k.cardIdx < k.topIdx {
-		k.topIdx = k.cardIdx
-	}
+	boardID := k.boardID
 	return func() tea.Msg {
-		err := root.client.ReorderCard(root.ctx, k.boardID, c.ID, api.ReorderInput{
+		err := root.client.ReorderCard(root.ctx, boardID, c.ID, api.ReorderInput{
 			Order:   target,
 			StackID: stackID,
 		})
 		if err != nil {
 			return errMsg{err}
 		}
-		return refreshMsg{}
+		return reorderedMsg{boardID: boardID, newCardIdx: target}
 	}
 }
 
@@ -256,10 +260,19 @@ func (k *kanbanModel) doArchive(root *Model, c *api.Card) tea.Cmd {
 }
 
 func (k *kanbanModel) openForm(kind, placeholder string) {
+	w := k.width - 6
+	switch {
+	case w <= 0:
+		w = 60
+	case w < 20:
+		w = 20
+	case w > 80:
+		w = 80
+	}
 	ti := textinput.New()
 	ti.Placeholder = placeholder
 	ti.Focus()
-	ti.Width = 60
+	ti.Width = w
 	k.form = ti
 	k.formKind = kind
 }
@@ -413,6 +426,10 @@ func (k *kanbanModel) renderStack(s api.Stack, focused, highlight bool, w, h int
 		hdr = stackHeaderStyle.Foreground(accent).Underline(true).Width(w).Render(fmt.Sprintf("%s (%d)", s.Title, len(s.Cards)))
 	}
 
+	if len(s.Cards) == 0 {
+		return columnWrapStyle.Width(w + 2).Render(hdr)
+	}
+
 	rendered := make([]string, len(s.Cards))
 	heights := make([]int, len(s.Cards))
 	for i, c := range s.Cards {
@@ -427,15 +444,11 @@ func (k *kanbanModel) renderStack(s api.Stack, focused, highlight bool, w, h int
 	}
 
 	var start, end int
-	switch {
-	case len(rendered) == 0:
-		start, end = 0, 0
-	case focused:
+	if focused {
 		var newTop int
 		newTop, start, end = pickFocusedWindow(k.topIdx, k.cardIdx, heights, avail)
 		k.topIdx = newTop
-	default:
-		start = 0
+	} else {
 		end = pickTopWindow(heights, avail)
 	}
 
@@ -448,8 +461,7 @@ func (k *kanbanModel) renderStack(s api.Stack, focused, highlight bool, w, h int
 		parts = append(parts, subtleStyle.Render(fmt.Sprintf("  ↓ %d more", len(rendered)-end)))
 	}
 
-	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
-	return lipgloss.NewStyle().Width(w + 2).Padding(0, 1).Render(content)
+	return columnWrapStyle.Width(w + 2).Render(lipgloss.JoinVertical(lipgloss.Left, parts...))
 }
 
 func renderCard(c api.Card, w int, selected bool, accent lipgloss.Color) string {

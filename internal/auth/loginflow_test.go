@@ -11,6 +11,13 @@ import (
 	"time"
 )
 
+func init() {
+	// Tests run hundreds of times in CI; the production 2s ticker would
+	// dominate the suite. The branching being tested doesn't care about
+	// the actual duration.
+	pollInterval = 10 * time.Millisecond
+}
+
 func TestStart_DecodesInitResponse(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" || r.URL.Path != "/index.php/login/v2" {
