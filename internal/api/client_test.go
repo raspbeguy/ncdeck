@@ -5,8 +5,10 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
@@ -100,6 +102,101 @@ func TestCreateCardDefaultsType(t *testing.T) {
 	}
 	if card.ID != 9 {
 		t.Errorf("unexpected id: %d", card.ID)
+	}
+}
+
+// TestReorderCardUsesDestinationStackInPath guards against the bug we hit:
+// passing the source stack in the URL path made the server silently no-op the
+// stack change.
+func TestReorderCardUsesDestinationStackInPath(t *testing.T) {
+	var captured string
+	c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		captured = r.URL.Path
+		if r.Method != "PUT" {
+			t.Errorf("expected PUT, got %s", r.Method)
+		}
+	})
+	if err := c.ReorderCard(context.Background(), 10, 100, ReorderInput{Order: 3, StackID: 42}); err != nil {
+		t.Fatal(err)
+	}
+	want := "/index.php/apps/deck/api/v1.0/boards/10/stacks/42/cards/100/reorder"
+	if captured != want {
+		t.Errorf("path: got %q, want %q", captured, want)
+	}
+}
+
+// TestUpdateCardClearsDueDate verifies that nil DueDate serialises as JSON
+// null so callers can actually clear the field.
+func TestUpdateCardClearsDueDate(t *testing.T) {
+	var payload map[string]any
+	c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		_ = json.NewEncoder(w).Encode(Card{ID: 1})
+	})
+	_, err := c.UpdateCard(context.Background(), 1, 1, 1, UpdateCardInput{Title: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, ok := payload["duedate"]
+	if !ok {
+		t.Fatal("duedate field missing from payload")
+	}
+	if v != nil {
+		t.Errorf("expected JSON null, got %v (%T)", v, v)
+	}
+	if _, ok := payload["done"]; !ok {
+		t.Errorf("done field should be present (as null) for symmetric clear semantics")
+	}
+}
+
+// TestUploadAttachmentStreams confirms the multipart payload is well-formed
+// and that the body is actually streamable (large files).
+func TestUploadAttachmentStreams(t *testing.T) {
+	tmp, err := os.CreateTemp("", "ncdeck-test-*.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.WriteString("hello world"); err != nil {
+		t.Fatal(err)
+	}
+	tmp.Close()
+
+	c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+			t.Errorf("bad content-type: %s", r.Header.Get("Content-Type"))
+		}
+		if r.Header.Get("OCS-APIRequest") != "true" {
+			t.Errorf("missing OCS-APIRequest header")
+		}
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Fatal(err)
+		}
+		if got := r.FormValue("type"); got != "file" {
+			t.Errorf("type field: %q", got)
+		}
+		f, hdr, err := r.FormFile("file")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		body, _ := io.ReadAll(f)
+		if string(body) != "hello world" {
+			t.Errorf("file body: %q", body)
+		}
+		if !strings.HasPrefix(hdr.Filename, "ncdeck-test-") {
+			t.Errorf("filename: %s", hdr.Filename)
+		}
+		_ = json.NewEncoder(w).Encode(Attachment{ID: 5, Data: hdr.Filename})
+	})
+	a, err := c.UploadAttachment(context.Background(), 42, tmp.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.ID != 5 {
+		t.Errorf("id: %d", a.ID)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -39,10 +40,10 @@ func (c *Client) ListComments(ctx context.Context, cardID, limit, offset int) ([
 	q := url.Values{}
 	q.Set("format", "json")
 	if limit > 0 {
-		q.Set("limit", fmt.Sprintf("%d", limit))
+		q.Set("limit", strconv.Itoa(limit))
 	}
 	if offset > 0 {
-		q.Set("offset", fmt.Sprintf("%d", offset))
+		q.Set("offset", strconv.Itoa(offset))
 	}
 	u := c.ocsURL(fmt.Sprintf("/cards/%d/comments", cardID), q)
 	var env ocsEnvelope[json.RawMessage]

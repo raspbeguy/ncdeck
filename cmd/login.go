@@ -33,15 +33,15 @@ var loginCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Minute)
 		defer cancel()
 
-		init, err := auth.Start(ctx, url)
+		info, err := auth.Start(ctx, url)
 		if err != nil {
 			return err
 		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "Open this URL in your browser to authorize ncdeck:\n  %s\n\nWaiting for confirmation...\n", init.Login)
-		_ = auth.OpenBrowser(init.Login)
+		fmt.Fprintf(cmd.OutOrStdout(), "Open this URL in your browser to authorize ncdeck:\n  %s\n\nWaiting for confirmation...\n", info.Login)
+		_ = auth.OpenBrowser(info.Login)
 
-		res, err := auth.Poll(ctx, init.Poll)
+		res, err := auth.Poll(ctx, info.Poll)
 		if err != nil {
 			return err
 		}
@@ -60,7 +60,7 @@ var loginCmd = &cobra.Command{
 		if dest == "" {
 			dest = config.DefaultPath()
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Logged in as %s — credentials saved to %s\n", res.LoginName, dest)
+		fmt.Fprintf(cmd.OutOrStdout(), "Logged in as %s, credentials saved to %s\n", res.LoginName, dest)
 		return nil
 	},
 }

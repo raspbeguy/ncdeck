@@ -47,15 +47,18 @@ func loadDescription(literal, file string) (string, error) {
 	return literal, nil
 }
 
+// parseDue accepts an RFC3339 timestamp (used verbatim) or a YYYY-MM-DD date
+// (interpreted as midnight in the user's local timezone, then serialised as
+// RFC3339). The local interpretation matches what users intuitively mean by
+// "due Friday".
 func parseDue(s string) (string, error) {
 	if s == "" {
 		return "", nil
 	}
-	// Accept either an ISO-8601 timestamp or YYYY-MM-DD (midnight UTC).
 	if _, err := time.Parse(time.RFC3339, s); err == nil {
 		return s, nil
 	}
-	t, err := time.Parse("2006-01-02", s)
+	t, err := time.ParseInLocation("2006-01-02", s, time.Local)
 	if err != nil {
 		return "", fmt.Errorf("invalid date %q (use YYYY-MM-DD or RFC3339)", s)
 	}
@@ -212,9 +215,8 @@ var cardEditCmd = &cobra.Command{
 			Owner:       cur.Owner.UID,
 			Order:       cur.Order,
 			Archived:    cur.Archived,
-		}
-		if cur.DueDate != nil {
-			in.DueDate = *cur.DueDate
+			DueDate:     cur.DueDate,
+			Done:        cur.Done,
 		}
 		if cmd.Flags().Changed("title") {
 			in.Title = cardEditTitle
@@ -227,17 +229,22 @@ var cardEditCmd = &cobra.Command{
 			in.Description = d
 		}
 		if cmd.Flags().Changed("due") {
-			d, err := parseDue(cardEditDue)
-			if err != nil {
-				return err
+			if cardEditDue == "" {
+				in.DueDate = nil
+			} else {
+				d, err := parseDue(cardEditDue)
+				if err != nil {
+					return err
+				}
+				in.DueDate = &d
 			}
-			in.DueDate = d
 		}
 		if cmd.Flags().Changed("done") {
 			if cardEditDone {
-				in.Done = time.Now().UTC().Format(time.RFC3339)
+				s := time.Now().UTC().Format(time.RFC3339)
+				in.Done = &s
 			} else {
-				in.Done = ""
+				in.Done = nil
 			}
 		}
 		k, err := c.UpdateCard(cmd.Context(), boardID, stackID, cardID, in)
@@ -271,7 +278,14 @@ var cardMoveCmd = &cobra.Command{
 		if err := c.ReorderCard(cmd.Context(), boardID, cardID, api.ReorderInput{Order: cardMoveOrder, StackID: cardMoveStack}); err != nil {
 			return err
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Moved card %d to stack %d (order %d)\n", cardID, cardMoveStack, cardMoveOrder)
+		// Re-fetch so we can report the order the server actually normalised to,
+		// rather than echoing the requested value (often 999).
+		k, err := c.GetCard(cmd.Context(), boardID, cardMoveStack, cardID)
+		if err != nil {
+			fmt.Fprintf(cmd.OutOrStdout(), "Moved card %d to stack %d\n", cardID, cardMoveStack)
+			return nil
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Moved card %d to stack %d (order %d)\n", cardID, k.StackID, k.Order)
 		return nil
 	},
 }

@@ -14,6 +14,25 @@ import (
 	"github.com/raspbeguy/ncdeck/internal/api"
 )
 
+// Layout constants for the kanban view.
+const (
+	// kanbanChromeRows is rows reserved for header + help line + their padding,
+	// subtracted from the terminal height before laying out columns.
+	kanbanChromeRows = 4
+	// kanbanColGutter is extra horizontal space added around each column for
+	// the padding wrapper; used when deciding how many columns fit.
+	kanbanColGutter = 2
+	// kanbanMinBodyRows is the smallest body height we'll render with.
+	kanbanMinBodyRows = 5
+	// kanbanScrollHintRows reserves room for the "↑ N more" / "↓ N more" hints
+	// so they don't push card content off-screen.
+	kanbanScrollHintRows = 2
+	// kanbanMinAvailRows is the smallest cards-area height we'll attempt.
+	kanbanMinAvailRows = 3
+	// kanbanDefaultColWidth is the per-column character width.
+	kanbanDefaultColWidth = 28
+)
+
 // kanbanModel renders horizontally scrolling columns of cards for a board.
 type kanbanModel struct {
 	boardID    int
@@ -23,7 +42,7 @@ type kanbanModel struct {
 	// cards for the focused card.
 	stackIdx int
 	cardIdx  int
-	// moveMode is true once the user pressed 'm' — next h/l + enter moves the card.
+	// moveMode is true once the user pressed 'm', next h/l + enter moves the card.
 	moveMode   bool
 	moveTarget int
 
@@ -44,7 +63,7 @@ type kanbanModel struct {
 }
 
 func newKanbanModel(boardID int) *kanbanModel {
-	return &kanbanModel{boardID: boardID, colWidth: 28}
+	return &kanbanModel{boardID: boardID, colWidth: kanbanDefaultColWidth}
 }
 
 func (k *kanbanModel) setStacks(stacks []api.Stack) {
@@ -107,7 +126,14 @@ func (k *kanbanModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "q":
 			return root, tea.Quit
-		case "esc", "b":
+		case "esc":
+			if k.moveMode {
+				k.moveMode = false
+				root.statusf("")
+				return root, nil
+			}
+			return root, func() tea.Msg { return backMsg{} }
+		case "b":
 			return root, func() tea.Msg { return backMsg{} }
 		case "h", "left":
 			if k.moveMode {
@@ -177,10 +203,6 @@ func (k *kanbanModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 			}
 		case "N":
 			k.openForm("stack", "New stack title")
-		}
-		if msg.String() == "esc" && k.moveMode {
-			k.moveMode = false
-			root.statusf("")
 		}
 	}
 	return root, nil
@@ -303,14 +325,14 @@ func (k *kanbanModel) View(width, height int) string {
 		return subtleStyle.Render("\n  No stacks. Press 'N' to create one, b to go back.\n")
 	}
 
-	bodyHeight := height - 4
-	if bodyHeight < 5 {
-		bodyHeight = 5
+	bodyHeight := height - kanbanChromeRows
+	if bodyHeight < kanbanMinBodyRows {
+		bodyHeight = kanbanMinBodyRows
 	}
 
 	// Determine how many stacks fit horizontally.
 	colW := k.colWidth
-	maxCols := width / (colW + 2)
+	maxCols := width / (colW + kanbanColGutter)
 	if maxCols < 1 {
 		maxCols = 1
 	}
@@ -372,11 +394,11 @@ func (k *kanbanModel) renderStack(s api.Stack, focused, highlight bool, w, h int
 		heights[i] = lipgloss.Height(rendered[i])
 	}
 
-	// Available rows for cards beneath the header. Reserve 2 rows for potential
+	// Available rows for cards beneath the header. Reserve rows for potential
 	// "↑ N more" / "↓ N more" hints so they don't push content off-screen.
-	avail := h - lipgloss.Height(hdr) - 2
-	if avail < 3 {
-		avail = 3
+	avail := h - lipgloss.Height(hdr) - kanbanScrollHintRows
+	if avail < kanbanMinAvailRows {
+		avail = kanbanMinAvailRows
 	}
 
 	start, end := 0, len(rendered)
@@ -437,10 +459,6 @@ func (k *kanbanModel) renderStack(s api.Stack, focused, highlight bool, w, h int
 
 	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
 	return lipgloss.NewStyle().Width(w + 2).Padding(0, 1).Render(content)
-}
-
-func renderCard(c api.Card, w int, selected bool) string {
-	return renderCardWithAccent(c, w, selected, colSelected)
 }
 
 func renderCardWithAccent(c api.Card, w int, selected bool, accent lipgloss.Color) string {

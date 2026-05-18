@@ -239,7 +239,7 @@ func (m *Model) loadBoards() tea.Cmd {
 			return errMsg{err}
 		}
 		// Filter archived for the picker by default.
-		filt := bs[:0]
+		filt := make([]api.Board, 0, len(bs))
 		for _, b := range bs {
 			if !b.Archived {
 				filt = append(filt, b)
@@ -273,7 +273,7 @@ func (m *Model) loadComments(cardID int) tea.Cmd {
 	return func() tea.Msg {
 		cs, err := m.client.ListComments(m.ctx, cardID, 50, 0)
 		if err != nil {
-			// Comments are non-fatal — return empty.
+			// Comments are non-fatal, return empty.
 			return commentsLoadedMsg{cardID, nil}
 		}
 		return commentsLoadedMsg{cardID, cs}
@@ -295,7 +295,12 @@ func (m *Model) loadAttachments(cardID int) tea.Cmd {
 	return func() tea.Msg {
 		as, err := m.client.ListAttachments(m.ctx, cardID)
 		if err != nil {
-			return attachmentsLoadedMsg{cardID, nil}
+			// 404 is benign (cards with no attachments), but anything else
+			// (401/403/network) is a real problem the user should see.
+			if ae, ok := err.(*api.APIError); ok && ae.Status == 404 {
+				return attachmentsLoadedMsg{cardID, nil}
+			}
+			return errMsg{err}
 		}
 		return attachmentsLoadedMsg{cardID, as}
 	}

@@ -1,4 +1,4 @@
-// ncdeck — a CLI and TUI client for Nextcloud Deck.
+// ncdeck, a CLI and TUI client for Nextcloud Deck.
 // Copyright (C) 2026 Guy Godfroy
 //
 // This program is free software: you can redistribute it and/or modify

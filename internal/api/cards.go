@@ -36,15 +36,24 @@ func (c *Client) GetCard(ctx context.Context, boardID, stackID, cardID int) (*Ca
 	return &out, nil
 }
 
+// UpdateCardInput captures fields supported by PUT /boards/{b}/stacks/{s}/cards/{c}.
+//
+// DueDate and Done are *string so callers can distinguish three cases:
+//   - field omitted entirely from the wire format    , unsupported (use a fetched
+//     value and pass it through)
+//   - explicit JSON null                             , clears the value
+//   - non-empty string                               , sets the value
+//
+// Empty-string semantics are server-defined; prefer nil to clear.
 type UpdateCardInput struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Type        string `json:"type"`
-	Owner       string `json:"owner"`
-	Order       int    `json:"order"`
-	DueDate     string `json:"duedate,omitempty"`
-	Archived    bool   `json:"archived"`
-	Done        string `json:"done,omitempty"`
+	Title       string  `json:"title"`
+	Description string  `json:"description"`
+	Type        string  `json:"type"`
+	Owner       string  `json:"owner"`
+	Order       int     `json:"order"`
+	DueDate     *string `json:"duedate"`
+	Archived    bool    `json:"archived"`
+	Done        *string `json:"done"`
 }
 
 func (c *Client) UpdateCard(ctx context.Context, boardID, stackID, cardID int, in UpdateCardInput) (*Card, error) {

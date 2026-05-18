@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"text/tabwriter"
 )
 
@@ -28,21 +29,10 @@ func Table(w io.Writer, header []string, rows [][]string) {
 	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	if len(header) > 0 {
-		fmt.Fprintln(tw, join(header))
+		fmt.Fprintln(tw, strings.Join(header, "\t"))
 	}
 	for _, r := range rows {
-		fmt.Fprintln(tw, join(r))
+		fmt.Fprintln(tw, strings.Join(r, "\t"))
 	}
 	tw.Flush()
-}
-
-func join(cols []string) string {
-	out := ""
-	for i, c := range cols {
-		if i > 0 {
-			out += "\t"
-		}
-		out += c
-	}
-	return out
 }

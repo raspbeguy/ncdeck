@@ -7,24 +7,34 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 	"github.com/raspbeguy/ncdeck/internal/api"
 	"github.com/raspbeguy/ncdeck/internal/config"
 	"github.com/spf13/cobra"
 )
 
 var (
-	flagConfig string
-	flagURL    string
-	flagJSON   bool
+	flagConfig  string
+	flagURL     string
+	flagJSON    bool
 	flagNoColor bool
 )
 
 var rootCmd = &cobra.Command{
-	Use:     "ncdeck",
-	Short:   "Nextcloud Deck CLI + TUI",
-	Long:    "ncdeck is a CLI and TUI client for Nextcloud Deck. Use it interactively or from scripts (`--json`).",
-	Version: "dev",
+	Use:          "ncdeck",
+	Short:        "Nextcloud Deck CLI + TUI",
+	Long:         "ncdeck is a CLI and TUI client for Nextcloud Deck. Use it interactively or from scripts (`--json`).",
+	Version:      "dev",
 	SilenceUsage: true,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// --no-color and the NO_COLOR convention (https://no-color.org) both
+		// downgrade lipgloss to ASCII so any subcommand or the TUI honour it.
+		if flagNoColor || os.Getenv("NO_COLOR") != "" {
+			lipgloss.SetColorProfile(termenv.Ascii)
+		}
+		return nil
+	},
 }
 
 // SetVersion is called from main with the values injected at build time by
@@ -42,7 +52,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&flagConfig, "config", "", "path to config file (default ~/.config/ncdeck/config.yaml)")
 	rootCmd.PersistentFlags().StringVar(&flagURL, "url", "", "Nextcloud base URL (overrides config)")
 	rootCmd.PersistentFlags().BoolVar(&flagJSON, "json", false, "output JSON instead of a table")
-	rootCmd.PersistentFlags().BoolVar(&flagNoColor, "no-color", false, "disable ANSI color output")
+	rootCmd.PersistentFlags().BoolVar(&flagNoColor, "no-color", false, "disable ANSI color output (also honours NO_COLOR)")
 }
 
 // loadConfig honors --config and applies env-var/flag overlays.
@@ -67,14 +77,4 @@ func newClient() (*api.Client, error) {
 		return nil, err
 	}
 	return api.New(cfg.URL, cfg.Username, cfg.Password), nil
-}
-
-// die prints err to stderr and exits non-zero. Used in subcommand RunE returns.
-func die(format string, a ...any) error {
-	return fmt.Errorf(format, a...)
-}
-
-// stderr is a convenience for printing to os.Stderr.
-func stderr(format string, a ...any) {
-	fmt.Fprintf(os.Stderr, format+"\n", a...)
 }

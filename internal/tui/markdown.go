@@ -17,7 +17,7 @@ func pickStyle() string {
 	if v := strings.TrimSpace(os.Getenv("NCDECK_THEME")); v != "" {
 		return v
 	}
-	// COLORFGBG is "fg;bg" — a small bg number means a dark background.
+	// COLORFGBG is "fg;bg", a small bg number means a dark background.
 	if v := os.Getenv("COLORFGBG"); v != "" {
 		parts := strings.Split(v, ";")
 		if len(parts) >= 2 {

@@ -49,7 +49,7 @@ func Start(ctx context.Context, baseURL string) (*LoginInit, error) {
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("login init: %s — %s", resp.Status, strings.TrimSpace(string(body)))
+		return nil, fmt.Errorf("login init: %s, %s", resp.Status, strings.TrimSpace(string(body)))
 	}
 	var out LoginInit
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {

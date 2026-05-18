@@ -74,13 +74,15 @@ func (m *cardModel) refreshBody() {
 		fmt.Fprintln(&b, chipStyle.Background(colDanger).Foreground(lipgloss.Color("230")).Render("ARCHIVED"))
 	}
 	if m.card.DueDate != nil && *m.card.DueDate != "" {
-		t, err := time.Parse(time.RFC3339, *m.card.DueDate)
-		if err == nil {
+		raw := *m.card.DueDate
+		if t, err := time.Parse(time.RFC3339, raw); err == nil {
 			line := "Due: " + t.Format("2006-01-02 15:04")
 			if t.Before(time.Now()) {
 				line = dueOverdueStyle.Render(line + "  (overdue)")
 			}
 			fmt.Fprintln(&b, line)
+		} else {
+			fmt.Fprintln(&b, "Due: "+raw)
 		}
 	}
 	if len(m.card.Labels) > 0 {
@@ -118,7 +120,7 @@ func (m *cardModel) refreshBody() {
 		if who == "" {
 			who = c.ActorID
 		}
-		fmt.Fprintf(&b, "  %s — %s\n  %s\n\n",
+		fmt.Fprintf(&b, "  %s, %s\n  %s\n\n",
 			lipgloss.NewStyle().Bold(true).Render(who),
 			subtleStyle.Render(c.CreationDT.Format("2006-01-02 15:04")),
 			c.Message)
@@ -226,9 +228,8 @@ func (m *cardModel) saveDescription(root *Model, desc string) tea.Cmd {
 		Owner:       m.card.Owner.UID,
 		Order:       m.card.Order,
 		Archived:    m.card.Archived,
-	}
-	if m.card.DueDate != nil {
-		in.DueDate = *m.card.DueDate
+		DueDate:     m.card.DueDate,
+		Done:        m.card.Done,
 	}
 	return func() tea.Msg {
 		_, err := root.client.UpdateCard(root.ctx, m.boardID, m.card.StackID, m.card.ID, in)
@@ -272,14 +273,13 @@ func (m *cardModel) toggleDone(root *Model) tea.Cmd {
 		Owner:       m.card.Owner.UID,
 		Order:       m.card.Order,
 		Archived:    m.card.Archived,
-	}
-	if m.card.DueDate != nil {
-		in.DueDate = *m.card.DueDate
+		DueDate:     m.card.DueDate,
 	}
 	if m.card.Done == nil || *m.card.Done == "" {
-		in.Done = time.Now().UTC().Format(time.RFC3339)
+		s := time.Now().UTC().Format(time.RFC3339)
+		in.Done = &s
 	} else {
-		in.Done = ""
+		in.Done = nil
 	}
 	return func() tea.Msg {
 		_, err := root.client.UpdateCard(root.ctx, m.boardID, m.card.StackID, m.card.ID, in)

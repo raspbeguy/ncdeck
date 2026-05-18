@@ -10,6 +10,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Config is the on-disk configuration. The Password field holds a Nextcloud
+// app password (not the user's real password) and is currently persisted as
+// plaintext in a 0600-mode file under XDG_CONFIG_HOME.
+//
+// TODO(keyring): move Password into the OS keychain via
+// github.com/zalando/go-keyring (or similar), falling back to plaintext on
+// platforms where no keyring is available (headless CI, etc.).
 type Config struct {
 	URL      string `yaml:"url"`
 	Username string `yaml:"username"`
@@ -30,7 +37,7 @@ func DefaultPath() string {
 }
 
 // Load reads the config file (if any) and overlays NCDECK_URL/USER/TOKEN env vars.
-// A missing file is not an error — env-only configuration is supported.
+// A missing file is not an error, env-only configuration is supported.
 func Load(path string) (*Config, error) {
 	cfg := &Config{}
 	if path == "" {
