@@ -306,13 +306,67 @@ func (k *kanbanModel) renderStack(s api.Stack, focused, highlight bool, w, h int
 		hdr = stackHeaderSel.Width(w).Render(fmt.Sprintf("%s (%d)", s.Title, len(s.Cards)))
 	}
 
-	var cards []string
-	cards = append(cards, hdr)
+	// Render every card once and record its actual rendered height, so we can
+	// pick a vertical window that keeps the focused card visible.
+	rendered := make([]string, len(s.Cards))
+	heights := make([]int, len(s.Cards))
 	for i, c := range s.Cards {
 		sel := focused && i == k.cardIdx
-		cards = append(cards, renderCard(c, w-2, sel))
+		rendered[i] = renderCard(c, w-2, sel)
+		heights[i] = lipgloss.Height(rendered[i])
 	}
-	content := lipgloss.JoinVertical(lipgloss.Left, cards...)
+
+	// Available rows for cards beneath the header. Reserve 2 rows for potential
+	// "↑ N more" / "↓ N more" hints so they don't push content off-screen.
+	avail := h - lipgloss.Height(hdr) - 2
+	if avail < 3 {
+		avail = 3
+	}
+
+	start, end := 0, len(rendered)
+	switch {
+	case len(rendered) == 0:
+		// nothing to do
+	case focused:
+		// Anchor on the focused card, then expand downward, then upward,
+		// to keep the cursor on-screen even in a tall column.
+		cursor := k.cardIdx
+		if cursor >= len(rendered) {
+			cursor = len(rendered) - 1
+		}
+		used := heights[cursor]
+		start, end = cursor, cursor+1
+		for end < len(rendered) && used+heights[end] <= avail {
+			used += heights[end]
+			end++
+		}
+		for start > 0 && used+heights[start-1] <= avail {
+			start--
+			used += heights[start]
+		}
+	default:
+		// Non-focused stacks: just show from the top, truncating if needed.
+		used := 0
+		end = 0
+		for end < len(rendered) && used+heights[end] <= avail {
+			used += heights[end]
+			end++
+		}
+		if end == 0 && len(rendered) > 0 {
+			end = 1 // always show at least one card
+		}
+	}
+
+	parts := []string{hdr}
+	if start > 0 {
+		parts = append(parts, subtleStyle.Render(fmt.Sprintf("  ↑ %d more", start)))
+	}
+	parts = append(parts, rendered[start:end]...)
+	if end < len(rendered) {
+		parts = append(parts, subtleStyle.Render(fmt.Sprintf("  ↓ %d more", len(rendered)-end)))
+	}
+
+	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
 	return lipgloss.NewStyle().Width(w + 2).Padding(0, 1).Render(content)
 }
 
