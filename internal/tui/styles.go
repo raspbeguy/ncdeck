@@ -2,7 +2,38 @@
 
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"strconv"
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
+
+// foregroundFor picks a readable foreground colour (near-black or near-white)
+// based on a background colour's perceived luminance. Accepts colours in
+// "#RRGGBB" form; unknown forms (8-bit terminal palette, named colours) fall
+// back to black, which is safe for the warm pastel-ish palette typical Deck
+// boards use.
+func foregroundFor(bg lipgloss.Color) lipgloss.Color {
+	s := string(bg)
+	if !strings.HasPrefix(s, "#") || len(s) != 7 {
+		return lipgloss.Color("16")
+	}
+	parse := func(hi, lo int) int {
+		v, err := strconv.ParseInt(s[hi:lo], 16, 0)
+		if err != nil {
+			return 0
+		}
+		return int(v)
+	}
+	r, g, b := parse(1, 3), parse(3, 5), parse(5, 7)
+	// Rec. 601 relative luminance; cheap and good enough for our palette.
+	lum := 0.299*float64(r) + 0.587*float64(g) + 0.114*float64(b)
+	if lum > 140 {
+		return lipgloss.Color("16") // near-black on light bg
+	}
+	return lipgloss.Color("230") // near-white on dark bg
+}
 
 // Color palette loosely based on the official Deck web UI.
 //

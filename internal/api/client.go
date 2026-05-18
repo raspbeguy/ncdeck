@@ -66,6 +66,30 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	return c.doRaw(ctx, method, c.BaseURL+apiBase+path, body, out)
 }
 
+// doStream executes a GET against the Deck API and streams the response body
+// into dst. Used for binary downloads (attachments) where JSON decoding isn't
+// appropriate.
+func (c *Client) doStream(ctx context.Context, path string, dst io.Writer) error {
+	url := c.BaseURL + apiBase + path
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return err
+	}
+	req.SetBasicAuth(c.User, c.Password)
+	req.Header.Set("OCS-APIRequest", "true")
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		body, _ := io.ReadAll(resp.Body)
+		return &APIError{Status: resp.StatusCode, Body: string(body)}
+	}
+	_, err = io.Copy(dst, resp.Body)
+	return err
+}
+
 // doMultipart executes a multipart/form-data request. The request body is
 // streamed from `bodyReader`; callers should produce the multipart payload in
 // a separate goroutine writing to a pipe whose read end is `bodyReader`.

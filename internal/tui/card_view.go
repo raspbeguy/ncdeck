@@ -149,10 +149,10 @@ func (m *cardModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 				m.due.commit()
 				out := m.due.rfc3339()
 				m.mode = cardModeView
-				return root, m.saveDueDate(root, out)
+				return root, m.saveDueDate(root, &out)
 			case "c":
 				m.mode = cardModeView
-				return root, m.saveDueDate(root, "")
+				return root, m.saveDueDate(root, nil)
 			case "backspace":
 				m.due.backspace()
 			case "left", "h", "shift+tab":
@@ -249,7 +249,7 @@ func (m *cardModel) View(width, height int) string {
 		return ""
 	}
 	if m.mode == cardModeEditDue {
-		return placeModal(width, height, m.due.view())
+		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, m.due.view())
 	}
 	box := modalStyle.Render(m.vp.View())
 	var footer string
@@ -295,19 +295,11 @@ func (m *cardModel) saveDescription(root *Model, desc string) tea.Cmd {
 	}
 }
 
-// saveDueDate updates the card's due date. Empty input clears it (sends JSON
-// null); any other input is parsed via api.ParseDueDate. Parse failures are
-// reported through the standard error message channel and the card is left
-// unchanged.
-func (m *cardModel) saveDueDate(root *Model, raw string) tea.Cmd {
-	var due *string
-	if raw != "" {
-		parsed, err := api.ParseDueDate(raw)
-		if err != nil {
-			return func() tea.Msg { return errMsg{err} }
-		}
-		due = &parsed
-	}
+// saveDueDate updates the card's due date. Passing nil clears it (the server
+// receives JSON null and removes the date); a pointer to an RFC3339 string
+// sets it. The dialog produces a guaranteed-valid value via dueDialog.rfc3339,
+// so this function does not re-parse.
+func (m *cardModel) saveDueDate(root *Model, due *string) tea.Cmd {
 	in := api.UpdateCardInput{
 		Title:       m.card.Title,
 		Description: m.card.Description,

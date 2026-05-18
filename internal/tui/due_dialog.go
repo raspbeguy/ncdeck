@@ -42,8 +42,14 @@ func newDueDialog(current *string, accent lipgloss.Color) dueDialog {
 }
 
 // daysInMonth returns the number of days in the dialog's current month/year,
-// handling leap years via the standard library.
+// handling leap years via the standard library. If month is transiently out
+// of range during typing it returns 31, the safest upper bound: callers use
+// this for day clamping, and a too-large bound means "do nothing" until the
+// month is committed to a valid value.
 func (d dueDialog) daysInMonth() int {
+	if d.month < 1 || d.month > 12 {
+		return 31
+	}
 	// Day 0 of (month+1) is the last day of month.
 	return time.Date(d.year, time.Month(d.month+1), 0, 0, 0, 0, 0, time.UTC).Day()
 }
@@ -62,8 +68,12 @@ func (d *dueDialog) clampDay() {
 
 // adjust nudges the focused field by delta, wrapping the value to its valid
 // range. Day wraps within the current month, month wraps 1..12, hour wraps
-// 0..23, minute wraps 0..59. Year is unbounded but kept >= 1900.
+// 0..23, minute wraps 0..59. Year is kept >= 1900.
+//
+// The typed-digit buffer is cleared because the nudged value is no longer
+// related to whatever the user was typing.
 func (d *dueDialog) adjust(delta int) {
+	d.buf = ""
 	switch d.focus {
 	case 0:
 		d.year += delta
@@ -105,10 +115,14 @@ func (d *dueDialog) moveFocus(delta int) {
 	}
 }
 
-// commit clears any pending typed digits and snaps month/day to at least 1
-// (they can transiently be 0 during typing).
+// commit clears any pending typed digits and snaps year/month/day to valid
+// minimums (they can transiently be < 1 during typing). Year=0 specifically
+// would serialise as "0000-01-01T..." and the Deck server rejects that.
 func (d *dueDialog) commit() {
 	d.buf = ""
+	if d.year < 1 {
+		d.year = 1
+	}
 	if d.month < 1 {
 		d.month = 1
 	}
@@ -220,61 +234,68 @@ func (d dueDialog) rfc3339() string {
 	return t.Format(time.RFC3339)
 }
 
+// fieldDisplay returns the right-aligned digit string the focused field shows
+// while the user is typing, or the zero-padded committed value otherwise.
+// Month and day can transiently be 0 during typing; that's rendered as "00".
+func (d dueDialog) fieldDisplay(i int) string {
+	max := d.fieldMaxDigits(i)
+	if d.focus == i && d.buf != "" {
+		return strings.Repeat(" ", max-len(d.buf)) + d.buf
+	}
+	switch i {
+	case 0:
+		return fmt.Sprintf("%04d", d.year)
+	case 1:
+		return fmt.Sprintf("%02d", d.month)
+	case 2:
+		return fmt.Sprintf("%02d", d.day)
+	case 3:
+		return fmt.Sprintf("%02d", d.hour)
+	case 4:
+		return fmt.Sprintf("%02d", d.minute)
+	}
+	return ""
+}
+
+// "mon" / "min" keep every label inside its 2-digit field's 4-char cell.
+var dueDialogLabels = [5]string{"year", "mon", "day", "hr", "min"}
+
 // view renders the dialog as a centered modal block. The caller is expected to
 // place it on top of the screen with lipgloss.Place.
 func (d dueDialog) view() string {
-	// "mon" / "min" keep every label inside its 2-digit field's 4-char cell.
-	labels := [5]string{"year", "mon", "day", "hr", "min"}
-
 	field := lipgloss.NewStyle().Padding(0, 1).Bold(true)
 	focused := field.
-		Foreground(lipgloss.Color("16")).
+		Foreground(foregroundFor(d.accent)).
 		Background(d.accent)
 
-	display := func(i int) string {
-		max := d.fieldMaxDigits(i)
-		// When the user is typing into this field, show the typed digits
-		// right-aligned within the field width so partial input doesn't
-		// look like leading zeros.
-		if d.focus == i && d.buf != "" {
-			return strings.Repeat(" ", max-len(d.buf)) + d.buf
-		}
-		// Special case: month/day can transiently be 0 during typing.
-		var v int
-		switch i {
-		case 0:
-			return fmt.Sprintf("%04d", d.year)
-		case 1:
-			v = d.month
-		case 2:
-			v = d.day
-		case 3:
-			v = d.hour
-		case 4:
-			v = d.minute
-		}
-		return fmt.Sprintf("%02d", v)
-	}
-	cell := func(i int) string {
+	// Render each cell once and remember its visual width so labels can be
+	// centred under their cell without paying for a second render.
+	var cells [5]string
+	var widths [5]int
+	for i := 0; i < 5; i++ {
+		text := d.fieldDisplay(i)
 		if d.focus == i {
-			return focused.Render(display(i))
+			cells[i] = focused.Render(text)
+		} else {
+			cells[i] = field.Render(text)
 		}
-		return field.Render(display(i))
+		widths[i] = lipgloss.Width(cells[i])
 	}
+
 	label := func(i int) string {
-		s := lipgloss.NewStyle().Foreground(colSubtle).Width(lipgloss.Width(cell(i))).Align(lipgloss.Center)
+		s := lipgloss.NewStyle().Foreground(colSubtle).Width(widths[i]).Align(lipgloss.Center)
 		if d.focus == i {
 			s = s.Foreground(d.accent).Bold(true)
 		}
-		return s.Render(labels[i])
+		return s.Render(dueDialogLabels[i])
 	}
 
 	sep := lipgloss.NewStyle().Foreground(colSubtle).Render(" / ")
 	colon := lipgloss.NewStyle().Foreground(colSubtle).Render(" : ")
 
-	date := lipgloss.JoinHorizontal(lipgloss.Top, cell(0), sep, cell(1), sep, cell(2))
+	date := lipgloss.JoinHorizontal(lipgloss.Top, cells[0], sep, cells[1], sep, cells[2])
 	dateLab := lipgloss.JoinHorizontal(lipgloss.Top, label(0), "   ", label(1), "   ", label(2))
-	timeRow := lipgloss.JoinHorizontal(lipgloss.Top, cell(3), colon, cell(4))
+	timeRow := lipgloss.JoinHorizontal(lipgloss.Top, cells[3], colon, cells[4])
 	timeLab := lipgloss.JoinHorizontal(lipgloss.Top, label(3), "   ", label(4))
 
 	body := lipgloss.JoinVertical(lipgloss.Center,
@@ -286,15 +307,8 @@ func (d dueDialog) view() string {
 		timeRow,
 		timeLab,
 		"",
-		helpStyle.Render("←/→ field   ↑/↓ value   type digits to set   ⏎ save   c clear   esc cancel"),
+		helpStyle.Render("←/→ field   ↑/↓ value   0-9 type   ⌫ erase   ⏎ save   c clear   esc cancel"),
 	)
 
 	return modalStyle.BorderForeground(d.accent).Padding(1, 3).Render(body)
-}
-
-// placeModal centers the modal content inside the available area. Bubble Tea
-// has no real overlay primitive, so the rest of the screen is replaced by
-// blank space for the duration of the dialog.
-func placeModal(width, height int, content string) string {
-	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, content)
 }

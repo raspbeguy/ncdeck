@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
-	"net/http"
 	"os"
 	"path/filepath"
 )
@@ -74,24 +73,7 @@ func (c *Client) UploadAttachment(ctx context.Context, boardID, stackID, cardID 
 
 // DownloadAttachment streams the raw bytes of an attachment to dst.
 func (c *Client) DownloadAttachment(ctx context.Context, boardID, stackID, cardID, attachmentID int, dst io.Writer) error {
-	url := c.BaseURL + apiBase + fmt.Sprintf("%s/%d", attachmentsBase(boardID, stackID, cardID), attachmentID)
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return err
-	}
-	req.SetBasicAuth(c.User, c.Password)
-	req.Header.Set("OCS-APIRequest", "true")
-	resp, err := c.HTTP.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
-		body, _ := io.ReadAll(resp.Body)
-		return &APIError{Status: resp.StatusCode, Body: string(body)}
-	}
-	_, err = io.Copy(dst, resp.Body)
-	return err
+	return c.doStream(ctx, fmt.Sprintf("%s/%d", attachmentsBase(boardID, stackID, cardID), attachmentID), dst)
 }
 
 // DeleteAttachment removes an attachment from a card.

@@ -25,13 +25,21 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - uses: goreleaser/goreleaser-action@v7
+      - name: GoReleaser (tag release)
+        if: github.event_name != 'workflow_dispatch'
+        uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
-          args: >-
-            ${{ github.event_name == 'workflow_dispatch'
-                && 'release --snapshot --clean'
-                || 'release --clean' }}
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: GoReleaser (snapshot)
+        if: github.event_name == 'workflow_dispatch'
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          version: "~> v2"
+          args: release --snapshot --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
