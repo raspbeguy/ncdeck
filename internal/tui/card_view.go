@@ -176,11 +176,15 @@ func (m *cardModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 				m.labels.moveCursor(+1)
 				return root, nil
 			case "enter":
-				label, wasAssigned := m.labels.toggleSelected()
-				if label == nil {
-					return root, nil
+				action, label, name := m.labels.currentAction()
+				switch action {
+				case labelActionToggle:
+					wasAssigned := m.labels.toggleAssigned(label.ID)
+					return root, m.toggleLabel(root, label.ID, wasAssigned)
+				case labelActionCreate:
+					return root, m.createLabel(root, name)
 				}
-				return root, m.toggleLabel(root, label.ID, wasAssigned)
+				return root, nil
 			}
 		}
 		m.labels.input, cmd = m.labels.input.Update(msg)
@@ -373,6 +377,30 @@ func (m *cardModel) postComment(root *Model, text string) tea.Cmd {
 			return errMsg{err}
 		}
 		return refreshMsg{}
+	}
+}
+
+// createLabel creates a fresh label on the board and assigns it to this card
+// in one cmd. Color defaults to a muted grey; users can recolour via the web
+// UI or `ncdeck label` if they want a brighter chip.
+const newLabelDefaultColor = "888888"
+
+func (m *cardModel) createLabel(root *Model, name string) tea.Cmd {
+	boardID := m.boardID
+	stackID := m.card.StackID
+	cardID := m.card.ID
+	return func() tea.Msg {
+		l, err := root.client.CreateLabel(root.ctx, boardID, api.LabelInput{
+			Title: name,
+			Color: newLabelDefaultColor,
+		})
+		if err != nil {
+			return errMsg{err}
+		}
+		if err := root.client.AssignLabelToCard(root.ctx, boardID, stackID, cardID, l.ID); err != nil {
+			return errMsg{err}
+		}
+		return labelCreatedMsg{boardID: boardID, label: *l}
 	}
 }
 

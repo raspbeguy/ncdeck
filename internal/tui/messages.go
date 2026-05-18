@@ -67,3 +67,10 @@ type reorderFailedMsg struct {
 	boardID int
 	err     error
 }
+
+// labelCreatedMsg lets the kanban + label dialog adopt a freshly-created
+// label without a full board re-fetch.
+type labelCreatedMsg struct {
+	boardID int
+	label   api.Label
+}

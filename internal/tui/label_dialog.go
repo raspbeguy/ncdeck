@@ -10,11 +10,19 @@ import (
 	"github.com/raspbeguy/ncdeck/internal/api"
 )
 
+type labelAction int
+
+const (
+	labelActionNone labelAction = iota
+	labelActionToggle
+	labelActionCreate
+)
+
 type labelDialog struct {
 	all      []api.Label
 	assigned map[int]bool // label ID -> currently on the card
 	filtered []int        // indices into all
-	cursor   int
+	cursor   int          // 0..len(filtered)-1 selects a label, == len(filtered) selects the create entry
 	input    textinput.Model
 	accent   lipgloss.Color
 }
@@ -46,13 +54,37 @@ func (d *labelDialog) refilter() {
 			d.filtered = append(d.filtered, i)
 		}
 	}
-	if d.cursor >= len(d.filtered) {
+	if d.cursor >= d.totalEntries() {
 		d.cursor = 0
 	}
 }
 
-func (d *labelDialog) moveCursor(delta int) {
+// canCreate returns true when the typed query is non-empty and doesn't match
+// any existing label title (case-insensitive). The dialog offers a synthetic
+// "+ Create" row in that case.
+func (d *labelDialog) canCreate() bool {
+	name := strings.TrimSpace(d.input.Value())
+	if name == "" {
+		return false
+	}
+	for _, l := range d.all {
+		if strings.EqualFold(l.Title, name) {
+			return false
+		}
+	}
+	return true
+}
+
+func (d *labelDialog) totalEntries() int {
 	n := len(d.filtered)
+	if d.canCreate() {
+		n++
+	}
+	return n
+}
+
+func (d *labelDialog) moveCursor(delta int) {
+	n := d.totalEntries()
 	if n == 0 {
 		d.cursor = 0
 		return
@@ -60,34 +92,45 @@ func (d *labelDialog) moveCursor(delta int) {
 	d.cursor = ((d.cursor+delta)%n + n) % n
 }
 
-func (d *labelDialog) selected() *api.Label {
-	if d.cursor < 0 || d.cursor >= len(d.filtered) {
-		return nil
+// currentAction inspects the cursor position to decide what enter should do.
+// The returned label is non-nil only when the action is labelActionToggle;
+// the returned name is set only for labelActionCreate.
+func (d *labelDialog) currentAction() (action labelAction, label *api.Label, name string) {
+	if d.cursor < len(d.filtered) {
+		return labelActionToggle, &d.all[d.filtered[d.cursor]], ""
 	}
-	return &d.all[d.filtered[d.cursor]]
+	if d.canCreate() {
+		return labelActionCreate, nil, strings.TrimSpace(d.input.Value())
+	}
+	return labelActionNone, nil, ""
 }
 
-// toggleSelected flips the assigned state for the cursor's label and returns
-// the label plus whether it was assigned before the flip (caller uses that to
-// decide between Assign vs Remove on the API side).
-func (d *labelDialog) toggleSelected() (*api.Label, bool) {
-	l := d.selected()
-	if l == nil {
-		return nil, false
-	}
-	was := d.assigned[l.ID]
-	d.assigned[l.ID] = !was
-	return l, was
+// toggleAssigned flips the assigned state for a label already in d.all and
+// reports the prior value so the caller can pick Assign vs Remove.
+func (d *labelDialog) toggleAssigned(id int) bool {
+	was := d.assigned[id]
+	d.assigned[id] = !was
+	return was
+}
+
+// adoptCreated appends a freshly-created label, marks it assigned, and clears
+// the filter so the user sees the new entry surface in the list.
+func (d *labelDialog) adoptCreated(l api.Label) {
+	d.all = append(d.all, l)
+	d.assigned[l.ID] = true
+	d.input.SetValue("")
+	d.cursor = 0
+	d.refilter()
 }
 
 func (d labelDialog) view() string {
 	title := lipgloss.NewStyle().Foreground(d.accent).Bold(true).Render("Labels")
 	parts := []string{title, inputBoxStyle.Render(d.input.View()), ""}
 
-	if len(d.filtered) == 0 {
+	if len(d.filtered) == 0 && !d.canCreate() {
 		empty := "(no matching labels)"
 		if len(d.all) == 0 {
-			empty = "(this board has no labels yet)"
+			empty = "(this board has no labels yet, type a name to create one)"
 		}
 		parts = append(parts, subtleStyle.Italic(true).Render(empty))
 	} else {
@@ -107,8 +150,17 @@ func (d labelDialog) view() string {
 				Render(l.Title)
 			parts = append(parts, marker+check+" "+chip)
 		}
+		if d.canCreate() {
+			marker := "  "
+			if d.cursor == len(d.filtered) {
+				marker = lipgloss.NewStyle().Foreground(d.accent).Bold(true).Render("▌ ")
+			}
+			label := lipgloss.NewStyle().Foreground(d.accent).Italic(true).
+				Render("+ Create \"" + strings.TrimSpace(d.input.Value()) + "\"")
+			parts = append(parts, marker+label)
+		}
 	}
 
-	parts = append(parts, "", helpStyle.Render("type to filter   ↑/↓ navigate   ⏎ toggle   esc close"))
+	parts = append(parts, "", helpStyle.Render("type to filter / create   ↑/↓ navigate   ⏎ toggle or create   esc close"))
 	return modalStyle.BorderForeground(d.accent).Padding(1, 3).Render(lipgloss.JoinVertical(lipgloss.Left, parts...))
 }

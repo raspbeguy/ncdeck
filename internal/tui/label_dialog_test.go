@@ -83,30 +83,103 @@ func TestMoveCursor_EmptyFilteredStaysAtZero(t *testing.T) {
 	}
 }
 
-func TestToggleSelected_FlipsAssignedAndReportsPriorState(t *testing.T) {
+func TestToggleAssigned_FlipsAndReportsPriorState(t *testing.T) {
 	d := newLabelDialog(boardLabelsFixture(), []api.Label{{ID: 1}}, lipgloss.Color("#0082c9"))
-	d.cursor = 0 // "bug" is currently assigned
-	l, was := d.toggleSelected()
-	if l == nil || l.ID != 1 || !was {
-		t.Errorf("first toggle: label=%v wasAssigned=%v, want id=1 wasAssigned=true", l, was)
+	if was := d.toggleAssigned(1); !was {
+		t.Errorf("first toggle: wasAssigned=%v, want true", was)
 	}
 	if d.assigned[1] {
 		t.Errorf("assigned[1] should be false after toggle")
 	}
-	l, was = d.toggleSelected()
-	if l == nil || l.ID != 1 || was {
-		t.Errorf("second toggle: label=%v wasAssigned=%v, want id=1 wasAssigned=false", l, was)
+	if was := d.toggleAssigned(1); was {
+		t.Errorf("second toggle: wasAssigned=%v, want false", was)
 	}
 	if !d.assigned[1] {
 		t.Errorf("assigned[1] should be true after second toggle")
 	}
 }
 
-func TestToggleSelected_EmptyFilteredReturnsNil(t *testing.T) {
+func TestCurrentAction_OnLabelRowReturnsToggle(t *testing.T) {
 	d := newLabelDialog(boardLabelsFixture(), nil, lipgloss.Color("#0082c9"))
-	d.input.SetValue("zzz")
+	d.cursor = 0
+	action, label, name := d.currentAction()
+	if action != labelActionToggle {
+		t.Errorf("action: got %d, want labelActionToggle", action)
+	}
+	if label == nil || label.ID != 1 {
+		t.Errorf("label: got %v, want id=1", label)
+	}
+	if name != "" {
+		t.Errorf("name should be empty for toggle, got %q", name)
+	}
+}
+
+func TestCurrentAction_OnCreateRowReturnsCreate(t *testing.T) {
+	d := newLabelDialog(boardLabelsFixture(), nil, lipgloss.Color("#0082c9"))
+	d.input.SetValue("urgent")
 	d.refilter()
-	if l, _ := d.toggleSelected(); l != nil {
-		t.Errorf("expected nil when no labels match, got %v", l)
+	// "urgent" doesn't match any existing label so canCreate is true.
+	// Cursor at len(filtered) lands on the synthetic create row.
+	d.cursor = len(d.filtered)
+	action, label, name := d.currentAction()
+	if action != labelActionCreate {
+		t.Errorf("action: got %d, want labelActionCreate", action)
+	}
+	if label != nil {
+		t.Errorf("label should be nil for create, got %v", label)
+	}
+	if name != "urgent" {
+		t.Errorf("name: got %q, want %q", name, "urgent")
+	}
+}
+
+func TestCanCreate_FalseWhenExactMatchExists(t *testing.T) {
+	d := newLabelDialog(boardLabelsFixture(), nil, lipgloss.Color("#0082c9"))
+	d.input.SetValue("bug") // exact title match
+	if d.canCreate() {
+		t.Errorf("canCreate should be false when an existing label matches exactly")
+	}
+	d.input.SetValue("BUG") // case-insensitive
+	if d.canCreate() {
+		t.Errorf("canCreate should be case-insensitive")
+	}
+}
+
+func TestCanCreate_TrueOnPartialMatch(t *testing.T) {
+	d := newLabelDialog(boardLabelsFixture(), nil, lipgloss.Color("#0082c9"))
+	// "bu" is a prefix of "bug" but not an exact match; user might still
+	// want to create a separate label called "bu".
+	d.input.SetValue("bu")
+	if !d.canCreate() {
+		t.Errorf("canCreate should be true for partial-match queries")
+	}
+}
+
+func TestMoveCursor_VisitsCreateRow(t *testing.T) {
+	d := newLabelDialog(boardLabelsFixture(), nil, lipgloss.Color("#0082c9"))
+	d.input.SetValue("urgent")
+	d.refilter()
+	// canCreate -> totalEntries = 0 + 1 = 1; cursor wraps within the single
+	// synthetic create row.
+	d.moveCursor(+1)
+	if d.cursor != 0 {
+		t.Errorf("with only the create row, cursor stays at 0, got %d", d.cursor)
+	}
+}
+
+func TestAdoptCreated_AppendsAssignsAndClearsFilter(t *testing.T) {
+	d := newLabelDialog(boardLabelsFixture(), nil, lipgloss.Color("#0082c9"))
+	d.input.SetValue("urgent")
+	d.refilter()
+	d.adoptCreated(api.Label{ID: 99, Title: "urgent", Color: "888888"})
+	if !d.assigned[99] {
+		t.Errorf("assigned[99] should be true after adoptCreated")
+	}
+	if d.input.Value() != "" {
+		t.Errorf("filter should be cleared, got %q", d.input.Value())
+	}
+	// Re-filtered list should now contain all 5 entries (4 fixture + 1 new).
+	if len(d.filtered) != 5 {
+		t.Errorf("filtered list: got %d entries, want 5", len(d.filtered))
 	}
 }

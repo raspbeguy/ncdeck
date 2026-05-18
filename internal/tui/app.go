@@ -172,6 +172,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.loadStacks(msg.boardID)
 		}
 		return m, nil
+	case labelCreatedMsg:
+		if m.onBoard(msg.boardID) {
+			m.kanban.boardLabels = append(m.kanban.boardLabels, msg.label)
+		}
+		if m.card != nil && m.card.mode == cardModeEditLabels {
+			m.card.labels.adoptCreated(msg.label)
+		}
+		// loadCard -> cardLoadedMsg -> enterCard takes care of comments
+		// and attachments, no need to double-fire here.
+		if m.card != nil {
+			return m, m.loadCard(m.card.boardID, m.card.stackID, m.card.cardID)
+		}
+		return m, nil
 	case commentsLoadedMsg:
 		if m.card != nil && m.card.cardID == msg.cardID {
 			m.card.setComments(msg.comments)
