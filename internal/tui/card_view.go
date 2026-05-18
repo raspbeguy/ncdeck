@@ -21,6 +21,7 @@ const (
 	cardModeView cardMode = iota
 	cardModeEditDescription
 	cardModeAddComment
+	cardModeEditDue
 )
 
 type cardModel struct {
@@ -34,6 +35,7 @@ type cardModel struct {
 	vp       viewport.Model
 	editor   textarea.Model
 	commentI textinput.Model
+	dueI     textinput.Model
 	mode     cardMode
 }
 
@@ -131,6 +133,22 @@ func (m *cardModel) refreshBody() {
 
 func (m *cardModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 	switch m.mode {
+	case cardModeEditDue:
+		var cmd tea.Cmd
+		if km, ok := msg.(tea.KeyMsg); ok {
+			switch km.String() {
+			case "esc":
+				m.mode = cardModeView
+				return root, nil
+			case "enter":
+				raw := strings.TrimSpace(m.dueI.Value())
+				m.mode = cardModeView
+				m.dueI.SetValue("")
+				return root, m.saveDueDate(root, raw)
+			}
+		}
+		m.dueI, cmd = m.dueI.Update(msg)
+		return root, cmd
 	case cardModeEditDescription:
 		var cmd tea.Cmd
 		if km, ok := msg.(tea.KeyMsg); ok {
@@ -194,6 +212,21 @@ func (m *cardModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 			return root, m.toggleArchive(root)
 		case "D":
 			return root, m.toggleDone(root)
+		case "d":
+			ti := textinput.New()
+			ti.Placeholder = "YYYY-MM-DD or RFC3339 (empty to clear)"
+			ti.Focus()
+			ti.Width = m.vp.Width
+			if m.card.DueDate != nil && *m.card.DueDate != "" {
+				if t, err := time.Parse(time.RFC3339, *m.card.DueDate); err == nil {
+					ti.SetValue(t.Format("2006-01-02"))
+				} else {
+					ti.SetValue(*m.card.DueDate)
+				}
+			}
+			m.dueI = ti
+			m.mode = cardModeEditDue
+			return root, nil
 		}
 	}
 	var cmd tea.Cmd
@@ -214,8 +247,11 @@ func (m *cardModel) View(width, height int) string {
 	case cardModeAddComment:
 		footer = inputBoxStyle.Render(m.commentI.View()) + "\n" + helpStyle.Render("⏎ post  esc cancel")
 		return lipgloss.JoinVertical(lipgloss.Left, box, footer)
+	case cardModeEditDue:
+		footer = inputBoxStyle.Render(m.dueI.View()) + "\n" + helpStyle.Render("⏎ save  esc cancel (empty value clears the due date)")
+		return lipgloss.JoinVertical(lipgloss.Left, box, footer)
 	default:
-		footer = helpStyle.Render("e edit description  c comment  a archive  D done  r refresh  esc back  q quit")
+		footer = helpStyle.Render("e edit description  c comment  d due date  a archive  D done  r refresh  esc back  q quit")
 		return lipgloss.JoinVertical(lipgloss.Left, box, footer)
 	}
 }
@@ -229,6 +265,38 @@ func (m *cardModel) saveDescription(root *Model, desc string) tea.Cmd {
 		Order:       m.card.Order,
 		Archived:    m.card.Archived,
 		DueDate:     m.card.DueDate,
+		Done:        m.card.Done,
+	}
+	return func() tea.Msg {
+		_, err := root.client.UpdateCard(root.ctx, m.boardID, m.card.StackID, m.card.ID, in)
+		if err != nil {
+			return errMsg{err}
+		}
+		return refreshMsg{}
+	}
+}
+
+// saveDueDate updates the card's due date. Empty input clears it (sends JSON
+// null); any other input is parsed via api.ParseDueDate. Parse failures are
+// reported through the standard error message channel and the card is left
+// unchanged.
+func (m *cardModel) saveDueDate(root *Model, raw string) tea.Cmd {
+	var due *string
+	if raw != "" {
+		parsed, err := api.ParseDueDate(raw)
+		if err != nil {
+			return func() tea.Msg { return errMsg{err} }
+		}
+		due = &parsed
+	}
+	in := api.UpdateCardInput{
+		Title:       m.card.Title,
+		Description: m.card.Description,
+		Type:        m.card.Type,
+		Owner:       m.card.Owner.UID,
+		Order:       m.card.Order,
+		Archived:    m.card.Archived,
+		DueDate:     due,
 		Done:        m.card.Done,
 	}
 	return func() tea.Msg {

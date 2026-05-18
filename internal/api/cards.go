@@ -5,7 +5,27 @@ package api
 import (
 	"context"
 	"fmt"
+	"time"
 )
+
+// ParseDueDate normalises a user-provided due date into the RFC3339 form the
+// Deck API expects. An RFC3339 input is returned verbatim; a YYYY-MM-DD input
+// is interpreted as midnight in the user's local timezone. An empty input
+// returns an empty string with no error so callers can decide whether that
+// means "no change" or "clear".
+func ParseDueDate(s string) (string, error) {
+	if s == "" {
+		return "", nil
+	}
+	if _, err := time.Parse(time.RFC3339, s); err == nil {
+		return s, nil
+	}
+	t, err := time.ParseInLocation("2006-01-02", s, time.Local)
+	if err != nil {
+		return "", fmt.Errorf("invalid date %q (use YYYY-MM-DD or RFC3339)", s)
+	}
+	return t.Format(time.RFC3339), nil
+}
 
 type CreateCardInput struct {
 	Title       string `json:"title"`

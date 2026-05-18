@@ -47,23 +47,9 @@ func loadDescription(literal, file string) (string, error) {
 	return literal, nil
 }
 
-// parseDue accepts an RFC3339 timestamp (used verbatim) or a YYYY-MM-DD date
-// (interpreted as midnight in the user's local timezone, then serialised as
-// RFC3339). The local interpretation matches what users intuitively mean by
-// "due Friday".
-func parseDue(s string) (string, error) {
-	if s == "" {
-		return "", nil
-	}
-	if _, err := time.Parse(time.RFC3339, s); err == nil {
-		return s, nil
-	}
-	t, err := time.ParseInLocation("2006-01-02", s, time.Local)
-	if err != nil {
-		return "", fmt.Errorf("invalid date %q (use YYYY-MM-DD or RFC3339)", s)
-	}
-	return t.Format(time.RFC3339), nil
-}
+// parseDue is the cmd-package alias for api.ParseDueDate, kept so existing
+// callers in this file read cleanly.
+func parseDue(s string) (string, error) { return api.ParseDueDate(s) }
 
 var cardListCmd = &cobra.Command{
 	Use:   "ls <boardID>",
