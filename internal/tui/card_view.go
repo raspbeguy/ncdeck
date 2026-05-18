@@ -24,10 +24,11 @@ const (
 	cardModeEditDue
 )
 
-// Matches modalStyle.Padding(1, 2) so the inner viewport sizes correctly.
+// modalStyle's rounded border (1 each side) + Padding(1, 2) total. Verified
+// with lipgloss: a 1x1 cell renders as 7x5 wrapped.
 const (
-	cardModalPadH = 4
-	cardModalPadV = 6
+	cardModalPadH = 6
+	cardModalPadV = 4
 )
 
 type cardModel struct {

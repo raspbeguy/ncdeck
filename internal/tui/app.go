@@ -85,6 +85,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.card != nil {
 			m.card.resize(m.width, m.height-chromeRows)
 		}
+		return m, nil
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -103,6 +104,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.errStr = ""
 		if m.kanban == nil || m.kanban.boardID != msg.boardID {
 			m.kanban = newKanbanModel(msg.boardID)
+			m.kanban.width = m.width
 		}
 		m.kanban.setStacks(msg.stacks)
 		return m, nil
@@ -110,6 +112,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.active = screenKanban
 		m.kanban = newKanbanModel(msg.boardID)
 		m.kanban.boardColor = msg.color
+		m.kanban.width = m.width
 		m.loading = true
 		cmds := []tea.Cmd{m.loadStacks(msg.boardID)}
 		if msg.color == "" {
@@ -133,21 +136,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case refreshMsg:
-		m.loading = true
 		switch m.active {
 		case screenBoards:
+			m.loading = true
 			return m, m.loadBoards()
 		case screenKanban:
+			m.loading = true
 			return m, m.loadStacks(m.kanban.boardID)
 		case screenCard:
-			if m.card != nil {
-				return m, tea.Batch(
-					m.loadCard(m.card.boardID, m.card.stackID, m.card.cardID),
-					m.loadComments(m.card.cardID),
-					m.loadAttachments(m.card.boardID, m.card.stackID, m.card.cardID),
-				)
+			if m.card == nil {
+				return m, nil
 			}
+			m.loading = true
+			return m, tea.Batch(
+				m.loadCard(m.card.boardID, m.card.stackID, m.card.cardID),
+				m.loadComments(m.card.cardID),
+				m.loadAttachments(m.card.boardID, m.card.stackID, m.card.cardID),
+			)
 		}
+		return m, nil
 	case openCardMsg:
 		return m, m.enterCard(msg.boardID, msg.card)
 	case cardLoadedMsg:
@@ -313,12 +320,15 @@ func (m *Model) enterCard(boardID int, card *api.Card) tea.Cmd {
 	m.loading = false
 	m.errStr = ""
 	m.active = screenCard
+	// Fresh cardModel zero-value already has mode = cardModeView. Refresh
+	// (cardLoadedMsg) preserves whatever mode the user is in so a save +
+	// quick 'e' to edit again doesn't lose the editor content when the
+	// refresh response arrives.
 	if m.card == nil {
 		m.card = &cardModel{}
 	}
 	m.card.boardID = boardID
-	m.card.mode = cardModeView
-	m.card.setCard(card, m.width, m.height)
+	m.card.setCard(card, m.width, m.height-chromeRows)
 	return tea.Batch(
 		m.loadComments(card.ID),
 		m.loadAttachments(boardID, card.StackID, card.ID),

@@ -116,7 +116,6 @@ func TestModel_Accent_UsesBoardColorWhenAvailable(t *testing.T) {
 
 func TestEnterCard_PopulatesAllFields(t *testing.T) {
 	m := newRoutingModel()
-	m.card = &cardModel{mode: cardModeEditDue} // simulate stale mode from prior card
 	card := &api.Card{ID: 42, StackID: 9, Title: "x"}
 	_ = m.enterCard(7, card)
 	if m.active != screenCard {
@@ -129,10 +128,21 @@ func TestEnterCard_PopulatesAllFields(t *testing.T) {
 		t.Errorf("ids: stack=%d card=%d, want 9/42", m.card.stackID, m.card.cardID)
 	}
 	if m.card.mode != cardModeView {
-		t.Errorf("mode: got %d, want cardModeView (stale mode must reset)", m.card.mode)
+		t.Errorf("fresh card mode: got %d, want cardModeView", m.card.mode)
 	}
 	if m.loading {
 		t.Errorf("loading should be false after enterCard")
+	}
+}
+
+// Refresh path (m.card already exists) must preserve mode so a save+'e'
+// race doesn't drop the user's in-progress editor.
+func TestEnterCard_PreservesModeOnRefresh(t *testing.T) {
+	m := newRoutingModel()
+	m.card = &cardModel{mode: cardModeEditDescription}
+	_ = m.enterCard(7, &api.Card{ID: 42, StackID: 9})
+	if m.card.mode != cardModeEditDescription {
+		t.Errorf("mode after refresh: got %d, want cardModeEditDescription", m.card.mode)
 	}
 }
 
@@ -158,8 +168,11 @@ func TestReorderedMsg_IgnoredForWrongBoard(t *testing.T) {
 	m := newRoutingModel()
 	m.kanban = newKanbanModel(7)
 	m.kanban.cardIdx = 5
-	_, _ = m.Update(reorderedMsg{boardID: 99, newCardIdx: 1})
+	_, cmd := m.Update(reorderedMsg{boardID: 99, newCardIdx: 1})
 	if m.kanban.cardIdx != 5 {
 		t.Errorf("cardIdx should not change when boardID mismatches, got %d", m.kanban.cardIdx)
+	}
+	if cmd != nil {
+		t.Errorf("expected nil cmd on mismatched boardID, got %v", cmd)
 	}
 }
