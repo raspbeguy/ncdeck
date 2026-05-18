@@ -135,17 +135,26 @@ func (m *cardModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 	switch m.mode {
 	case cardModeEditDue:
 		if km, ok := msg.(tea.KeyMsg); ok {
-			switch km.String() {
+			s := km.String()
+			// Single digits set the focused field directly.
+			if len(s) == 1 && s[0] >= '0' && s[0] <= '9' {
+				m.due.typeDigit(rune(s[0]))
+				return root, nil
+			}
+			switch s {
 			case "esc":
 				m.mode = cardModeView
 				return root, nil
 			case "enter":
+				m.due.commit()
 				out := m.due.rfc3339()
 				m.mode = cardModeView
 				return root, m.saveDueDate(root, out)
 			case "c":
 				m.mode = cardModeView
 				return root, m.saveDueDate(root, "")
+			case "backspace":
+				m.due.backspace()
 			case "left", "h", "shift+tab":
 				m.due.moveFocus(-1)
 			case "right", "l", "tab":

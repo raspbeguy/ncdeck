@@ -4,6 +4,8 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -11,11 +13,13 @@ import (
 
 // dueDialog is the foreground modal used to pick a due date+time. Each of the
 // five fields (year, month, day, hour, minute) is edited independently with
-// arrow keys. Day is automatically clamped to the chosen month's length.
+// arrow keys or by typing digits directly. Day is automatically clamped to the
+// chosen month's length.
 type dueDialog struct {
 	year, month, day int
 	hour, minute     int
-	focus            int // 0=year, 1=month, 2=day, 3=hour, 4=minute
+	focus            int    // 0=year, 1=month, 2=day, 3=hour, 4=minute
+	buf              string // digits typed in the current field, reset on focus move
 	accent           lipgloss.Color
 }
 
@@ -87,8 +91,11 @@ func wrap(v, mod int) int {
 	return v
 }
 
-// moveFocus shifts the focus by delta (left/right), clamped to 0..4.
+// moveFocus shifts the focus by delta (left/right), clamped to 0..4. The
+// current field is committed first so partial typed values like "0" in the
+// month field get normalised to "1".
 func (d *dueDialog) moveFocus(delta int) {
+	d.commit()
 	d.focus += delta
 	if d.focus < 0 {
 		d.focus = 0
@@ -96,6 +103,114 @@ func (d *dueDialog) moveFocus(delta int) {
 	if d.focus > 4 {
 		d.focus = 4
 	}
+}
+
+// commit clears any pending typed digits and snaps month/day to at least 1
+// (they can transiently be 0 during typing).
+func (d *dueDialog) commit() {
+	d.buf = ""
+	if d.month < 1 {
+		d.month = 1
+	}
+	if d.day < 1 {
+		d.day = 1
+	}
+	d.clampDay()
+}
+
+// fieldMaxDigits returns how many digits the focused field can hold.
+func (d *dueDialog) fieldMaxDigits(i int) int {
+	if i == 0 {
+		return 4
+	}
+	return 2
+}
+
+// typeDigit handles a "0".."9" keypress on the focused field. It builds up
+// a typed value digit-by-digit (replacing the field's display), rejects
+// values that overflow the field's range, and auto-advances to the next
+// field once the current one is full.
+func (d *dueDialog) typeDigit(c rune) {
+	if c < '0' || c > '9' {
+		return
+	}
+	digit := string(c)
+	max := d.fieldMaxDigits(d.focus)
+
+	// Append (or replace if the buffer is already full).
+	if len(d.buf) >= max {
+		d.buf = digit
+	} else {
+		d.buf = d.buf + digit
+	}
+	v, _ := strconv.Atoi(d.buf)
+
+	// If accumulating the digits overflows the field's range, throw away
+	// what we had and use just the new digit. Example: hour=14 + "5" tried as
+	// 145 -> rejected -> reset to 5.
+	if !d.acceptValue(v) {
+		d.buf = digit
+		_ = d.acceptValue(int(c - '0')) // single digit 0..9 always fits
+	}
+
+	// Auto-advance once a field is full so users can fluently type
+	// "20271231 1430" to set everything.
+	if len(d.buf) >= max && d.focus < 4 {
+		d.moveFocus(+1)
+	}
+}
+
+// acceptValue tries to set the focused field to v. Returns false if v is out
+// of range for that field (caller can decide to retry with a smaller value).
+func (d *dueDialog) acceptValue(v int) bool {
+	switch d.focus {
+	case 0:
+		d.year = v
+		d.clampDay()
+		return true
+	case 1:
+		if v > 12 {
+			return false
+		}
+		d.month = v
+		if v >= 1 {
+			d.clampDay()
+		}
+		return true
+	case 2:
+		if v > d.daysInMonth() {
+			return false
+		}
+		d.day = v
+		return true
+	case 3:
+		if v > 23 {
+			return false
+		}
+		d.hour = v
+		return true
+	case 4:
+		if v > 59 {
+			return false
+		}
+		d.minute = v
+		return true
+	}
+	return false
+}
+
+// backspace removes the last typed digit from the focused field. With no
+// buffered digits it leaves the value alone.
+func (d *dueDialog) backspace() {
+	if d.buf == "" {
+		return
+	}
+	d.buf = d.buf[:len(d.buf)-1]
+	v := 0
+	if d.buf != "" {
+		v, _ = strconv.Atoi(d.buf)
+	}
+	d.acceptValue(v)
 }
 
 // rfc3339 formats the dialog's date+time as an RFC3339 string in the user's
@@ -108,25 +223,43 @@ func (d dueDialog) rfc3339() string {
 // view renders the dialog as a centered modal block. The caller is expected to
 // place it on top of the screen with lipgloss.Place.
 func (d dueDialog) view() string {
-	values := [5]string{
-		fmt.Sprintf("%04d", d.year),
-		fmt.Sprintf("%02d", d.month),
-		fmt.Sprintf("%02d", d.day),
-		fmt.Sprintf("%02d", d.hour),
-		fmt.Sprintf("%02d", d.minute),
-	}
-	labels := [5]string{"year", "month", "day", "hour", "min"}
+	// "mon" / "min" keep every label inside its 2-digit field's 4-char cell.
+	labels := [5]string{"year", "mon", "day", "hr", "min"}
 
 	field := lipgloss.NewStyle().Padding(0, 1).Bold(true)
 	focused := field.
 		Foreground(lipgloss.Color("16")).
 		Background(d.accent)
 
+	display := func(i int) string {
+		max := d.fieldMaxDigits(i)
+		// When the user is typing into this field, show the typed digits
+		// right-aligned within the field width so partial input doesn't
+		// look like leading zeros.
+		if d.focus == i && d.buf != "" {
+			return strings.Repeat(" ", max-len(d.buf)) + d.buf
+		}
+		// Special case: month/day can transiently be 0 during typing.
+		var v int
+		switch i {
+		case 0:
+			return fmt.Sprintf("%04d", d.year)
+		case 1:
+			v = d.month
+		case 2:
+			v = d.day
+		case 3:
+			v = d.hour
+		case 4:
+			v = d.minute
+		}
+		return fmt.Sprintf("%02d", v)
+	}
 	cell := func(i int) string {
 		if d.focus == i {
-			return focused.Render(values[i])
+			return focused.Render(display(i))
 		}
-		return field.Render(values[i])
+		return field.Render(display(i))
 	}
 	label := func(i int) string {
 		s := lipgloss.NewStyle().Foreground(colSubtle).Width(lipgloss.Width(cell(i))).Align(lipgloss.Center)
@@ -153,7 +286,7 @@ func (d dueDialog) view() string {
 		timeRow,
 		timeLab,
 		"",
-		helpStyle.Render("←/→ field   ↑/↓ value   ⏎ save   c clear   esc cancel"),
+		helpStyle.Render("←/→ field   ↑/↓ value   type digits to set   ⏎ save   c clear   esc cancel"),
 	)
 
 	return modalStyle.BorderForeground(d.accent).Padding(1, 3).Render(body)
