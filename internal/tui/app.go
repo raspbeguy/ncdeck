@@ -120,7 +120,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 	case boardInfoMsg:
-		if m.kanban != nil && m.kanban.boardID == msg.boardID {
+		if m.onBoard(msg.boardID) {
 			m.kanban.boardColor = msg.color
 		}
 		return m, nil
@@ -161,14 +161,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case cardLoadedMsg:
 		return m, m.enterCard(msg.boardID, msg.card)
 	case reorderedMsg:
-		if m.kanban != nil && m.kanban.boardID == msg.boardID {
+		if m.onBoard(msg.boardID) {
 			m.kanban.reorderInFlight = false
 		}
 		return m, nil
 	case reorderFailedMsg:
 		m.errStr = msg.err.Error()
-		if m.kanban != nil && m.kanban.boardID == msg.boardID {
+		if m.onBoard(msg.boardID) {
 			m.kanban.reorderInFlight = false
+			m.loading = true
 			return m, m.loadStacks(msg.boardID)
 		}
 		return m, nil
@@ -318,6 +319,10 @@ func (m *Model) accent() lipgloss.Color {
 		return m.kanban.accentColor()
 	}
 	return colSelected
+}
+
+func (m *Model) onBoard(boardID int) bool {
+	return m.kanban != nil && m.kanban.boardID == boardID
 }
 
 func (m *Model) enterCard(boardID int, card *api.Card) tea.Cmd {

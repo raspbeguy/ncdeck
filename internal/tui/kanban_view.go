@@ -215,6 +215,9 @@ func (k *kanbanModel) curStack() *api.Stack {
 // J/K presses feel responsive. reorderInFlight gates against pressing again
 // before the server confirms (which would queue a stale move). On failure
 // the kanban resyncs by reloading stacks from the server.
+//
+// Result handling lives in app.Update: reorderedMsg clears the gate,
+// reorderFailedMsg clears the gate + triggers a full resync.
 func (k *kanbanModel) reorderWithin(root *Model, delta int) tea.Cmd {
 	if k.reorderInFlight {
 		return nil
@@ -227,6 +230,8 @@ func (k *kanbanModel) reorderWithin(root *Model, delta int) tea.Cmd {
 	if target < 0 || target >= len(s.Cards) {
 		return nil
 	}
+	// Capture the card *before* the swap; the closure must move the card
+	// the user was on, not the one that ends up at the old slot after.
 	c := s.Cards[k.cardIdx]
 	stackID := s.ID
 	boardID := k.boardID
