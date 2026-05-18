@@ -13,6 +13,24 @@ import (
 	"github.com/raspbeguy/ncdeck/internal/api"
 )
 
+// Wires a Model + kanbanModel against an httptest server so tea.Cmd factories
+// can be exercised without a live Nextcloud.
+func newKanbanWithStubServer(t *testing.T, h http.HandlerFunc) (*Model, *kanbanModel) {
+	t.Helper()
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	m := &Model{ctx: context.Background(), client: api.New(srv.URL, "u", "p")}
+	k := newKanbanModel(7)
+	k.stacks = []api.Stack{{ID: 1, Title: "A", Cards: []api.Card{{ID: 10, Title: "a"}}}}
+	m.kanban = k
+	return m, k
+}
+
+func isRefreshMsg(msg tea.Msg) bool { _, ok := msg.(refreshMsg); return ok }
+func isErrMsg(msg tea.Msg) bool     { _, ok := msg.(errMsg); return ok }
+
+// --- setStacks --------------------------------------------------------------
+
 func TestSetStacks_SortsByOrder(t *testing.T) {
 	k := newKanbanModel(1)
 	k.setStacks([]api.Stack{
@@ -40,6 +58,62 @@ func TestSetStacks_SortsCardsWithinStack(t *testing.T) {
 		t.Errorf("card order: got %s %s %s, want y x z", cards[0].Title, cards[1].Title, cards[2].Title)
 	}
 }
+
+func TestSetStacks_ClampsCursorWhenStackShrinks(t *testing.T) {
+	k := newKanbanModel(1)
+	k.stackIdx = 2
+	k.cardIdx = 5
+	k.setStacks([]api.Stack{
+		{ID: 1, Order: 0, Cards: []api.Card{{ID: 1}}},
+	})
+	if k.stackIdx != 0 {
+		t.Errorf("stackIdx not reset: got %d, want 0", k.stackIdx)
+	}
+	if k.cardIdx != 0 {
+		t.Errorf("cardIdx not reset: got %d, want 0", k.cardIdx)
+	}
+}
+
+// End-to-end check that setStacks + pickFocusedWindow together survive a
+// stale topIdx (setStacks doesn't clear it; the render-time picker clamps).
+func TestSetStacksThenPickFocusedWindow_SelfCorrectsOnShrink(t *testing.T) {
+	k := newKanbanModel(1)
+	k.stacks = []api.Stack{{ID: 1, Cards: []api.Card{{ID: 1}, {ID: 2}, {ID: 3}, {ID: 4}}}}
+	k.cardIdx = 3
+	k.topIdx = 3
+	k.setStacks([]api.Stack{
+		{ID: 1, Order: 0, Cards: []api.Card{{ID: 1}}},
+	})
+	if k.cardIdx != 0 {
+		t.Errorf("cardIdx: got %d, want 0", k.cardIdx)
+	}
+	heights := []int{4}
+	newTop, _, _ := pickFocusedWindow(k.topIdx, k.cardIdx, heights, 20)
+	if newTop != 0 {
+		t.Errorf("pickFocusedWindow self-correction: got newTop=%d, want 0", newTop)
+	}
+}
+
+// --- Update routing ---------------------------------------------------------
+
+func TestKanbanUpdate_JKMovesCursor(t *testing.T) {
+	m := &Model{ctx: context.Background()}
+	k := newKanbanModel(1)
+	k.stacks = []api.Stack{{ID: 1, Cards: []api.Card{
+		{ID: 1}, {ID: 2}, {ID: 3},
+	}}}
+	m.kanban = k
+	_, _ = k.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}, m)
+	if k.cardIdx != 1 {
+		t.Errorf("j: cardIdx=%d, want 1", k.cardIdx)
+	}
+	_, _ = k.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}, m)
+	if k.cardIdx != 0 {
+		t.Errorf("k: cardIdx=%d, want 0", k.cardIdx)
+	}
+}
+
+// --- reorderWithin ----------------------------------------------------------
 
 // Two rapid J presses must each move the cursor + locally swap the cards
 // (so a future press operates on the correct card), and the in-flight gate
@@ -119,38 +193,80 @@ func TestReorderWithin_BoundsRejectsOutOfRange(t *testing.T) {
 	}
 }
 
-// Kanban Update should let j/k change the cursor when not in form/move modes.
-func TestKanbanUpdate_JKMovesCursor(t *testing.T) {
-	m := &Model{ctx: context.Background()}
-	k := newKanbanModel(1)
-	k.stacks = []api.Stack{{ID: 1, Cards: []api.Card{
-		{ID: 1}, {ID: 2}, {ID: 3},
-	}}}
-	m.kanban = k
-	_, _ = k.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}, m)
-	if k.cardIdx != 1 {
-		t.Errorf("j: cardIdx=%d, want 1", k.cardIdx)
-	}
-	_, _ = k.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}, m)
-	if k.cardIdx != 0 {
-		t.Errorf("k: cardIdx=%d, want 0", k.cardIdx)
+// --- command factories ------------------------------------------------------
+
+func TestDoArchive_ReturnsRefreshOnSuccess(t *testing.T) {
+	m, k := newKanbanWithStubServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{}`))
+	})
+	cmd := k.doArchive(m, &k.stacks[0].Cards[0])
+	if msg := cmd(); !isRefreshMsg(msg) {
+		t.Errorf("got %T, want refreshMsg", msg)
 	}
 }
 
-func TestSetStacks_ClampsCursorWhenStackShrinks(t *testing.T) {
-	k := newKanbanModel(1)
-	k.stackIdx = 2
-	k.cardIdx = 5
-	k.setStacks([]api.Stack{
-		{ID: 1, Order: 0, Cards: []api.Card{{ID: 1}}},
+func TestDoArchive_ReturnsErrOnFailure(t *testing.T) {
+	m, k := newKanbanWithStubServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
 	})
-	if k.stackIdx != 0 {
-		t.Errorf("stackIdx not reset: got %d, want 0", k.stackIdx)
-	}
-	if k.cardIdx != 0 {
-		t.Errorf("cardIdx not reset: got %d, want 0", k.cardIdx)
+	cmd := k.doArchive(m, &k.stacks[0].Cards[0])
+	if msg := cmd(); !isErrMsg(msg) {
+		t.Errorf("got %T, want errMsg", msg)
 	}
 }
+
+func TestDoDelete_ReturnsRefreshOnSuccess(t *testing.T) {
+	m, k := newKanbanWithStubServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{}`))
+	})
+	cmd := k.doDelete(m, &k.stacks[0].Cards[0])
+	if msg := cmd(); !isRefreshMsg(msg) {
+		t.Errorf("got %T, want refreshMsg", msg)
+	}
+}
+
+func TestDoMove_ReturnsRefreshOnSuccess(t *testing.T) {
+	m, k := newKanbanWithStubServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{}`))
+	})
+	// doMove needs two stacks so moveTarget can refer to a different one.
+	k.stacks = append(k.stacks, api.Stack{ID: 2, Title: "B"})
+	k.stackIdx = 0
+	k.moveTarget = 1
+	k.moveMode = true
+	cmd := k.doMove(m)
+	if cmd == nil {
+		t.Fatal("doMove returned nil")
+	}
+	if msg := cmd(); !isRefreshMsg(msg) {
+		t.Errorf("got %T, want refreshMsg", msg)
+	}
+	if k.moveMode {
+		t.Errorf("moveMode should be cleared after doMove")
+	}
+}
+
+func TestCreateCard_ReturnsRefreshOnSuccess(t *testing.T) {
+	m, k := newKanbanWithStubServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"id":99,"title":"new"}`))
+	})
+	cmd := k.createCard(m, "new")
+	if msg := cmd(); !isRefreshMsg(msg) {
+		t.Errorf("got %T, want refreshMsg", msg)
+	}
+}
+
+func TestCreateStack_ReturnsRefreshOnSuccess(t *testing.T) {
+	m, k := newKanbanWithStubServer(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"id":2,"title":"new"}`))
+	})
+	cmd := k.createStack(m, "new")
+	if msg := cmd(); !isRefreshMsg(msg) {
+		t.Errorf("got %T, want refreshMsg", msg)
+	}
+}
+
+// --- window picking ---------------------------------------------------------
 
 func TestPickFocusedWindow_CursorFitsAtTop(t *testing.T) {
 	heights := []int{4, 4, 4, 4, 4}
@@ -190,117 +306,6 @@ func TestPickFocusedWindow_SingleTallCardAlwaysVisible(t *testing.T) {
 	newTop, start, end := pickFocusedWindow(0, 1, heights, 10)
 	if newTop != 1 || start != 1 || end != 2 {
 		t.Errorf("got newTop=%d start=%d end=%d, want 1 1 2", newTop, start, end)
-	}
-}
-
-// newKanbanWithStubServer wires a Model + kanbanModel against an httptest
-// server so the various tea.Cmd factories below can be exercised without a
-// live Nextcloud.
-func newKanbanWithStubServer(t *testing.T, h http.HandlerFunc) (*Model, *kanbanModel, *httptest.Server) {
-	t.Helper()
-	srv := httptest.NewServer(h)
-	t.Cleanup(srv.Close)
-	m := &Model{ctx: context.Background(), client: api.New(srv.URL, "u", "p")}
-	k := newKanbanModel(7)
-	k.stacks = []api.Stack{{ID: 1, Title: "A", Cards: []api.Card{{ID: 10, Title: "a"}}}}
-	m.kanban = k
-	return m, k, srv
-}
-
-func TestDoArchive_ReturnsRefreshOnSuccess(t *testing.T) {
-	m, k, _ := newKanbanWithStubServer(t, func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{}`))
-	})
-	cmd := k.doArchive(m, &k.stacks[0].Cards[0])
-	if msg := cmd(); !isRefreshMsg(msg) {
-		t.Errorf("got %T, want refreshMsg", msg)
-	}
-}
-
-func TestDoArchive_ReturnsErrOnFailure(t *testing.T) {
-	m, k, _ := newKanbanWithStubServer(t, func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	})
-	cmd := k.doArchive(m, &k.stacks[0].Cards[0])
-	if msg := cmd(); !isErrMsg(msg) {
-		t.Errorf("got %T, want errMsg", msg)
-	}
-}
-
-func TestDoDelete_ReturnsRefreshOnSuccess(t *testing.T) {
-	m, k, _ := newKanbanWithStubServer(t, func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{}`))
-	})
-	cmd := k.doDelete(m, &k.stacks[0].Cards[0])
-	if msg := cmd(); !isRefreshMsg(msg) {
-		t.Errorf("got %T, want refreshMsg", msg)
-	}
-}
-
-func TestDoMove_ReturnsRefreshOnSuccess(t *testing.T) {
-	m, k, _ := newKanbanWithStubServer(t, func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{}`))
-	})
-	// doMove needs two stacks so moveTarget can refer to a different one.
-	k.stacks = append(k.stacks, api.Stack{ID: 2, Title: "B"})
-	k.stackIdx = 0
-	k.moveTarget = 1
-	k.moveMode = true
-	cmd := k.doMove(m)
-	if cmd == nil {
-		t.Fatal("doMove returned nil")
-	}
-	if msg := cmd(); !isRefreshMsg(msg) {
-		t.Errorf("got %T, want refreshMsg", msg)
-	}
-	if k.moveMode {
-		t.Errorf("moveMode should be cleared after doMove")
-	}
-}
-
-func TestCreateCard_ReturnsRefreshOnSuccess(t *testing.T) {
-	m, k, _ := newKanbanWithStubServer(t, func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"id":99,"title":"new"}`))
-	})
-	cmd := k.createCard(m, "new")
-	if msg := cmd(); !isRefreshMsg(msg) {
-		t.Errorf("got %T, want refreshMsg", msg)
-	}
-}
-
-func TestCreateStack_ReturnsRefreshOnSuccess(t *testing.T) {
-	m, k, _ := newKanbanWithStubServer(t, func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"id":2,"title":"new"}`))
-	})
-	cmd := k.createStack(m, "new")
-	if msg := cmd(); !isRefreshMsg(msg) {
-		t.Errorf("got %T, want refreshMsg", msg)
-	}
-}
-
-func isRefreshMsg(msg tea.Msg) bool { _, ok := msg.(refreshMsg); return ok }
-func isErrMsg(msg tea.Msg) bool     { _, ok := msg.(errMsg); return ok }
-
-// setStacks doesn't touch topIdx; the render's pickFocusedWindow self-corrects
-// when topIdx ends up past the end of the shrunken Cards slice.
-func TestSetStacks_TopIdxSelfCorrectsOnShrink(t *testing.T) {
-	k := newKanbanModel(1)
-	k.stacks = []api.Stack{{ID: 1, Cards: []api.Card{{ID: 1}, {ID: 2}, {ID: 3}, {ID: 4}}}}
-	k.cardIdx = 3
-	k.topIdx = 3
-	k.setStacks([]api.Stack{
-		{ID: 1, Order: 0, Cards: []api.Card{{ID: 1}}},
-	})
-	// After setStacks: cardIdx is clamped to 0, topIdx is *not* clamped here
-	// (it gets fixed lazily by pickFocusedWindow on the next render).
-	if k.cardIdx != 0 {
-		t.Errorf("cardIdx: got %d, want 0", k.cardIdx)
-	}
-	// Verify the render path doesn't crash when topIdx is stale.
-	heights := []int{4}
-	newTop, _, _ := pickFocusedWindow(k.topIdx, k.cardIdx, heights, 20)
-	if newTop != 0 {
-		t.Errorf("pickFocusedWindow self-correction: got newTop=%d, want 0", newTop)
 	}
 }
 

@@ -464,13 +464,13 @@ func init() {
 	cardListCmd.Flags().BoolVar(&cardListArchived, "archived", false, "include archived cards")
 
 	cardCreateCmd.Flags().StringVar(&cardCreateDesc, "description", "", "card description (markdown)")
-	cardCreateCmd.Flags().StringVarP(&cardCreateDescFile, "description-file", "F", "", "read description from file (- for stdin)")
+	cardCreateCmd.Flags().StringVarP(&cardCreateDescFile, "description-file", "F", "", "read description from file (takes precedence over --description)")
 	cardCreateCmd.Flags().StringVar(&cardCreateDue, "due", "", "due date (YYYY-MM-DD or RFC3339)")
 	cardCreateCmd.Flags().IntVar(&cardCreateOrder, "order", api.OrderAtEnd, "position within stack")
 
 	cardEditCmd.Flags().StringVar(&cardEditTitle, "title", "", "new title")
 	cardEditCmd.Flags().StringVar(&cardEditDesc, "description", "", "new description")
-	cardEditCmd.Flags().StringVarP(&cardEditDescFile, "description-file", "F", "", "read description from file")
+	cardEditCmd.Flags().StringVarP(&cardEditDescFile, "description-file", "F", "", "read description from file (takes precedence over --description)")
 	cardEditCmd.Flags().StringVar(&cardEditDue, "due", "", "new due date (\"\" to clear)")
 	cardEditCmd.Flags().BoolVar(&cardEditDone, "done", false, "mark done (true) or undone (false)")
 

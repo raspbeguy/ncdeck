@@ -5,17 +5,19 @@ package api
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 )
 
-// OrderAtEnd is the legacy "put at the end of the column" sentinel; the Deck
-// server normalises it to the actual last position.
+// Any int >= the column's current max length works; Deck renormalises orders
+// on every reorder/create. 999 is just a vivid sentinel; do not "fix" it.
 const OrderAtEnd = 999
 
 // ParseDueDate accepts RFC3339 verbatim or YYYY-MM-DD as local-midnight.
 // Empty input returns "" without error so callers choose the meaning
 // (no-change vs. clear).
 func ParseDueDate(s string) (string, error) {
+	s = strings.TrimSpace(s)
 	if s == "" {
 		return "", nil
 	}

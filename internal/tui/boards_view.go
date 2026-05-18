@@ -43,7 +43,9 @@ func (b boardsModel) Update(msg tea.Msg, root *Model) (boardsModel, tea.Cmd) {
 		case "g", "home":
 			b.cursor = 0
 		case "G", "end":
-			b.cursor = len(b.boards) - 1
+			if n := len(b.boards); n > 0 {
+				b.cursor = n - 1
+			}
 		case "r":
 			return b, func() tea.Msg { return refreshMsg{} }
 		case "enter", "l", "right":
@@ -65,7 +67,11 @@ func (b boardsModel) View(width, height int) string {
 		"",
 	}
 	for i, board := range b.boards {
-		boardCol := lipgloss.Color("#" + board.Color)
+		hex := board.Color
+		if hex == "" {
+			hex = "888888"
+		}
+		boardCol := lipgloss.Color("#" + hex)
 		marker := "  "
 		if i == b.cursor {
 			marker = lipgloss.NewStyle().Foreground(boardCol).Render("▌ ")

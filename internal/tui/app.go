@@ -326,6 +326,9 @@ func (m *Model) onBoard(boardID int) bool {
 }
 
 func (m *Model) enterCard(boardID int, card *api.Card) tea.Cmd {
+	if card == nil {
+		return nil
+	}
 	m.loading = false
 	m.errStr = ""
 	m.active = screenCard

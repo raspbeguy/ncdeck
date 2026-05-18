@@ -88,6 +88,8 @@ func (k *kanbanModel) focusedCard() *api.Card {
 }
 
 func (k *kanbanModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
+	// When the inline form is open every msg is forwarded to its textinput;
+	// the textinput ignores non-key messages so passing them through is safe.
 	if k.formKind != "" {
 		var cmd tea.Cmd
 		if km, ok := msg.(tea.KeyMsg); ok {
@@ -222,22 +224,21 @@ func (k *kanbanModel) reorderWithin(root *Model, delta int) tea.Cmd {
 	if k.reorderInFlight {
 		return nil
 	}
-	s := k.curStack()
-	if s == nil {
+	if k.stackIdx >= len(k.stacks) {
 		return nil
 	}
+	cards := k.stacks[k.stackIdx].Cards
 	target := k.cardIdx + delta
-	if target < 0 || target >= len(s.Cards) {
+	if target < 0 || target >= len(cards) {
 		return nil
 	}
 	// Capture the card *before* the swap; the closure must move the card
 	// the user was on, not the one that ends up at the old slot after.
-	c := s.Cards[k.cardIdx]
-	stackID := s.ID
+	c := cards[k.cardIdx]
+	stackID := k.stacks[k.stackIdx].ID
 	boardID := k.boardID
 
-	k.stacks[k.stackIdx].Cards[k.cardIdx], k.stacks[k.stackIdx].Cards[target] =
-		k.stacks[k.stackIdx].Cards[target], k.stacks[k.stackIdx].Cards[k.cardIdx]
+	cards[k.cardIdx], cards[target] = cards[target], cards[k.cardIdx]
 	k.cardIdx = target
 	if k.cardIdx < k.topIdx {
 		k.topIdx = k.cardIdx

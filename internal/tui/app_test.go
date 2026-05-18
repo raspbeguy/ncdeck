@@ -7,6 +7,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/raspbeguy/ncdeck/internal/api"
 )
 
@@ -101,7 +102,7 @@ func TestUpdate_BoardInfoMsgIgnoredForWrongBoard(t *testing.T) {
 
 func TestModel_Accent_FallsBackWhenNoKanban(t *testing.T) {
 	m := newRoutingModel()
-	if got := m.accent(); string(got) != string(colSelected) {
+	if got := m.accent(); got != colSelected {
 		t.Errorf("accent without kanban: got %q, want %q", got, colSelected)
 	}
 }
@@ -110,7 +111,7 @@ func TestModel_Accent_UsesBoardColorWhenAvailable(t *testing.T) {
 	m := newRoutingModel()
 	m.kanban = newKanbanModel(1)
 	m.kanban.boardColor = "deadbe"
-	if got := string(m.accent()); got != "#deadbe" {
+	if got := m.accent(); got != lipgloss.Color("#deadbe") {
 		t.Errorf("accent: got %q, want %q", got, "#deadbe")
 	}
 }
@@ -183,7 +184,21 @@ func TestReorderFailedMsg_ResyncsKanban(t *testing.T) {
 	if cmd == nil {
 		t.Errorf("expected a resync (loadStacks) cmd on failure")
 	}
+	if !m.loading {
+		t.Errorf("expected loading=true so the spinner shows during the resync")
+	}
 	if m.errStr == "" {
 		t.Errorf("expected an error message to surface to the user")
+	}
+}
+
+func TestEnterCard_NilCardIsNoOp(t *testing.T) {
+	m := newRoutingModel()
+	startActive := m.active
+	if cmd := m.enterCard(7, nil); cmd != nil {
+		t.Errorf("expected nil cmd for nil card, got %v", cmd)
+	}
+	if m.active != startActive {
+		t.Errorf("active changed: got %d, want %d (no-op)", m.active, startActive)
 	}
 }
