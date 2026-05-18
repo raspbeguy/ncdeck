@@ -3,6 +3,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -132,6 +133,151 @@ func TestLabelManager_OnLabelDeletedDropsAndClampsCursor(t *testing.T) {
 	}
 	if m.cursor != 0 {
 		t.Errorf("cursor on empty: got %d, want 0", m.cursor)
+	}
+}
+
+func TestLabelManager_EditColorFiresUpdateImmediately(t *testing.T) {
+	m := managerFixture()
+	m.cursor = 0
+	_ = m.Update(keyPress("c"))
+	if m.mode != lmgrModeColor || m.intent != lmgrIntentEditColor {
+		t.Fatalf("after 'c': mode=%d intent=%d, want lmgrModeColor+lmgrIntentEditColor", m.mode, m.intent)
+	}
+	if a := m.Update(tea.KeyMsg{Type: tea.KeyEnter}); a != lmgrActionUpdateColor {
+		t.Errorf("enter on edit-color should fire updateColor, got %d", a)
+	}
+	if m.pendingColor == "" {
+		t.Errorf("pendingColor should be set after color enter")
+	}
+}
+
+func TestLabelManager_EscInCreateColorReturnsToName(t *testing.T) {
+	m := managerFixture()
+	_ = m.Update(keyPress("n"))
+	m.nameIn.SetValue("urgent")
+	_ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.mode != lmgrModeColor {
+		t.Fatalf("setup: expected to advance to color mode, got %d", m.mode)
+	}
+	if a := m.Update(tea.KeyMsg{Type: tea.KeyEsc}); a != lmgrActionNone {
+		t.Errorf("esc in create-color should be lmgrActionNone, got %d", a)
+	}
+	if m.mode != lmgrModeName {
+		t.Errorf("esc in create-color should pop back to name mode, got %d", m.mode)
+	}
+	if m.intent != lmgrIntentCreate {
+		t.Errorf("intent should remain lmgrIntentCreate, got %d", m.intent)
+	}
+}
+
+func TestLabelManager_OnLabelDeletedNonCursorKeepsCursor(t *testing.T) {
+	m := managerFixture()
+	m.cursor = 0
+	m.onLabelDeleted(2) // delete "feature", cursor was on "bug" (id=1)
+	if len(m.all) != 1 {
+		t.Errorf("len after delete: got %d, want 1", len(m.all))
+	}
+	if m.cursor != 0 {
+		t.Errorf("cursor on non-cursor delete should stay at 0, got %d", m.cursor)
+	}
+	if m.all[0].ID != 1 {
+		t.Errorf("remaining label should be bug (id=1), got id=%d", m.all[0].ID)
+	}
+}
+
+func TestLabelManager_CreateRoundTripPreservesPickerState(t *testing.T) {
+	m := managerFixture()
+	_ = m.Update(keyPress("n"))
+	m.nameIn.SetValue("urgent")
+	_ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m.picker.input.SetValue("ff7f50")
+	_ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.mode != lmgrModeName {
+		t.Fatalf("setup: esc should return to name mode, got %d", m.mode)
+	}
+	_ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.mode != lmgrModeColor {
+		t.Fatalf("setup: enter on name should advance to color, got %d", m.mode)
+	}
+	if got := m.picker.input.Value(); got != "ff7f50" {
+		t.Errorf("picker input should preserve typed value across name<->color round-trip; got %q, want %q", got, "ff7f50")
+	}
+}
+
+// Pinned bug: previously left/right in colour mode always called movePreset,
+// so the textinput's cursor-left / cursor-right never reached the input when
+// it was focused.
+func TestLabelManager_LeftRightWhenInputFocusedDoesNotMovePalette(t *testing.T) {
+	m := managerFixture()
+	m.cursor = 0
+	_ = m.Update(keyPress("c"))
+	_ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if !m.picker.focusInput {
+		t.Fatalf("setup: tab should focus the input")
+	}
+	before := m.picker.presetIdx
+	_ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	_ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	if m.picker.presetIdx != before {
+		t.Errorf("left/right with input focused must not move palette cursor; got %d, want %d", m.picker.presetIdx, before)
+	}
+}
+
+func TestLabelManager_ResetSubdialogClearsPendingColor(t *testing.T) {
+	m := managerFixture()
+	m.pendingName = "x"
+	m.pendingColor = "abcdef"
+	m.picker = newColorPicker("ff0000", lipgloss.Color("#0082c9"))
+	m.mode = lmgrModeColor
+	m.intent = lmgrIntentEditColor
+	m.resetSubdialog()
+	if m.pendingName != "" || m.pendingColor != "" {
+		t.Errorf("resetSubdialog should clear both pendingName and pendingColor, got %q / %q", m.pendingName, m.pendingColor)
+	}
+	if m.picker.initialised() {
+		t.Errorf("resetSubdialog should zero the picker so the next create flow gets a fresh one")
+	}
+}
+
+// Pinned: edit-color on a label whose hex isn't in the preset palette must
+// preserve the original colour when the user presses ⏎ on the auto-focused
+// input, instead of silently replacing it with the default preset.
+func TestLabelManager_EditColorOnNonPresetHexPreservesOriginal(t *testing.T) {
+	m := newLabelManager(
+		[]api.Label{{ID: 1, Title: "coral", Color: "ff7f50"}},
+		nil,
+		lipgloss.Color("#0082c9"),
+	)
+	_ = m.Update(keyPress("c"))
+	if m.mode != lmgrModeColor || m.intent != lmgrIntentEditColor {
+		t.Fatalf("after 'c': mode=%d intent=%d", m.mode, m.intent)
+	}
+	if !m.picker.focusInput {
+		t.Errorf("non-preset hex should auto-focus the input")
+	}
+	if a := m.Update(tea.KeyMsg{Type: tea.KeyEnter}); a != lmgrActionUpdateColor {
+		t.Fatalf("enter on edit-color should fire update, got %d", a)
+	}
+	if m.pendingColor != "ff7f50" {
+		t.Errorf("⏎ on auto-focused input must keep the original hex; got %q want %q", m.pendingColor, "ff7f50")
+	}
+}
+
+func TestLabelManager_FilterStatusPluralisation(t *testing.T) {
+	m := managerFixture()
+	m.filter[1] = true
+	out := m.viewList()
+	if !strings.Contains(out, "1 label.") {
+		t.Errorf("singular: expected '1 label.' in viewList output, got: %q", out)
+	}
+	if strings.Contains(out, "1 labels") {
+		t.Errorf("singular: viewList must not say '1 labels', got: %q", out)
+	}
+	m.filter[2] = true
+	out = m.viewList()
+	if !strings.Contains(out, "2 labels.") {
+		t.Errorf("plural: expected '2 labels.' in viewList output, got: %q", out)
 	}
 }
 

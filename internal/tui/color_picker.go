@@ -41,14 +41,27 @@ func newColorPicker(currentHex string, accent lipgloss.Color) colorPicker {
 	cur := strings.TrimPrefix(strings.TrimSpace(currentHex), "#")
 	ti.SetValue(cur)
 	p := colorPicker{presets: defaultPalette, input: ti, accent: accent}
+	matched := false
 	for i, e := range defaultPalette {
 		if strings.EqualFold(e.hex, cur) {
 			p.presetIdx = i
+			matched = true
 			break
 		}
 	}
+	// Custom hex: -1 + focused input together stop ⏎ from silently
+	// falling back to the first preset.
+	if !matched && cur != "" {
+		p.presetIdx = -1
+		p.focusInput = true
+		p.input.Focus()
+	}
 	return p
 }
+
+// Used by labelManager to preserve picker state across an
+// esc-back-to-name round-trip in the create flow.
+func (p colorPicker) initialised() bool { return p.presets != nil }
 
 func (p *colorPicker) movePreset(delta int) {
 	n := len(p.presets)
@@ -82,7 +95,7 @@ func (p colorPicker) pickedColor() (string, bool) {
 func validateHex(s string) (string, bool) {
 	s = strings.TrimSpace(s)
 	s = strings.TrimPrefix(s, "#")
-	if len(s) != 6 {
+	if len(s) != 3 && len(s) != 6 {
 		return "", false
 	}
 	for _, c := range s {
@@ -94,7 +107,15 @@ func validateHex(s string) (string, bool) {
 			return "", false
 		}
 	}
+	if len(s) == 3 {
+		s = expandHexShorthand(s)
+	}
 	return strings.ToLower(s), true
+}
+
+// Byte indexing assumes the caller validated three ASCII hex digits.
+func expandHexShorthand(s string) string {
+	return string([]byte{s[0], s[0], s[1], s[1], s[2], s[2]})
 }
 
 func (p colorPicker) view() string {
@@ -110,6 +131,7 @@ func (p colorPicker) view() string {
 		if !p.focusInput && i == p.presetIdx {
 			swatch = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(p.accent).Render(swatch)
 		} else {
+			// Padding matches the focused-swatch border thickness so rows don't jitter.
 			swatch = lipgloss.NewStyle().Padding(1, 1).Render(swatch)
 		}
 		current = append(current, swatch)
@@ -129,6 +151,10 @@ func (p colorPicker) view() string {
 		inputBox = inputBoxStyle.BorderForeground(p.accent).Render(p.input.View())
 	}
 
+	hint := "tab switch palette/hex   ←/→ pick preset   ⏎ confirm   esc cancel"
+	if p.focusInput {
+		hint = "tab switch palette/hex   type to edit hex   ⏎ confirm   esc cancel"
+	}
 	return lipgloss.JoinVertical(lipgloss.Left,
 		subtleStyle.Render("palette:"),
 		lipgloss.JoinVertical(lipgloss.Left, rows...),
@@ -136,6 +162,6 @@ func (p colorPicker) view() string {
 		subtleStyle.Render(inputLabel),
 		inputBox,
 		"",
-		helpStyle.Render("tab switch palette/hex   ←/→ pick preset   ⏎ confirm   esc cancel"),
+		helpStyle.Render(hint),
 	)
 }

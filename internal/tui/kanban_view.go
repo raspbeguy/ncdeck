@@ -481,12 +481,13 @@ func (k *kanbanModel) View(width, height int) string {
 func (k *kanbanModel) handleLabelMgrKey(root *Model, km tea.KeyMsg) tea.Cmd {
 	switch action := k.labelMgr.Update(km); action {
 	case lmgrActionClose:
+		// Don't disturb the cursor when the user just glanced at labels.
+		if !filtersEqual(k.labelFilter, k.labelMgr.filter) {
+			k.cardIdx = 0
+			k.topIdx = 0
+		}
 		k.labelFilter = k.labelMgr.filter
 		k.labelMgrOpen = false
-		// Filter may have shrunk the visible cards; reset cursor so it
-		// always lands on something visible.
-		k.cardIdx = 0
-		k.topIdx = 0
 		return nil
 	case lmgrActionCreate:
 		return k.cmdCreateLabel(root, k.labelMgr.pendingName, k.labelMgr.pendingColor)
@@ -550,6 +551,18 @@ func copyFilter(src map[int]bool) map[int]bool {
 		out[k] = v
 	}
 	return out
+}
+
+func filtersEqual(a, b map[int]bool) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for id := range a {
+		if !b[id] {
+			return false
+		}
+	}
+	return true
 }
 
 // matchesLabelFilter is true when the card has at least one label in the

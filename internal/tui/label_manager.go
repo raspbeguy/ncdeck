@@ -99,6 +99,8 @@ func (m *labelManager) beginCreate() {
 	m.mode = lmgrModeName
 	m.intent = lmgrIntentCreate
 	m.pendingName = ""
+	m.pendingColor = ""
+	m.picker = colorPicker{}
 	m.nameIn = newNameInput("new label name", "")
 }
 
@@ -173,6 +175,8 @@ func (m *labelManager) resetSubdialog() {
 	m.mode = lmgrModeList
 	m.intent = lmgrIntentNone
 	m.pendingName = ""
+	m.pendingColor = ""
+	m.picker = colorPicker{}
 }
 
 func newNameInput(placeholder, initial string) textinput.Model {
@@ -242,9 +246,12 @@ func (m *labelManager) updateName(km tea.KeyMsg) lmgrAction {
 		m.pendingName = v
 		switch m.intent {
 		case lmgrIntentCreate:
-			// Two-stage: capture name, then advance to colour.
+			// Init only on the first transition so esc-back-to-name
+			// and re-advance preserves any typed colour.
 			m.mode = lmgrModeColor
-			m.picker = newColorPicker(newLabelDefaultColor, m.accent)
+			if !m.picker.initialised() {
+				m.picker = newColorPicker(newLabelDefaultColor, m.accent)
+			}
 			return lmgrActionNone
 		case lmgrIntentEditName:
 			return lmgrActionUpdateName
@@ -258,8 +265,14 @@ func (m *labelManager) updateName(km tea.KeyMsg) lmgrAction {
 }
 
 func (m *labelManager) updateColor(km tea.KeyMsg) lmgrAction {
+	// left/right with input focused fall out of the switch so textinput.Update below moves the cursor.
 	switch km.String() {
 	case "esc":
+		// In create flow esc pops back to name so the typed name isn't lost.
+		if m.intent == lmgrIntentCreate {
+			m.mode = lmgrModeName
+			return lmgrActionNone
+		}
 		m.resetSubdialog()
 		return lmgrActionNone
 	case "tab":
@@ -268,13 +281,13 @@ func (m *labelManager) updateColor(km tea.KeyMsg) lmgrAction {
 	case "left":
 		if !m.picker.focusInput {
 			m.picker.movePreset(-1)
+			return lmgrActionNone
 		}
-		return lmgrActionNone
 	case "right":
 		if !m.picker.focusInput {
 			m.picker.movePreset(+1)
+			return lmgrActionNone
 		}
-		return lmgrActionNone
 	case "enter":
 		hex, ok := m.picker.pickedColor()
 		if !ok {
@@ -345,13 +358,12 @@ func (m labelManager) viewList() string {
 	title := lipgloss.NewStyle().Foreground(m.accent).Bold(true).Render("Manage labels")
 	parts := []string{title, ""}
 
-	filtered := 0
-	for id := range m.filter {
-		_ = id
-		filtered++
-	}
-	if filtered > 0 {
-		parts = append(parts, subtleStyle.Italic(true).Render(fmt.Sprintf("Filtering by %d label(s); space to toggle.", filtered)))
+	if filtered := len(m.filter); filtered > 0 {
+		noun := "label"
+		if filtered != 1 {
+			noun = "labels"
+		}
+		parts = append(parts, subtleStyle.Italic(true).Render(fmt.Sprintf("Filter active: %d %s. space toggles the focused label.", filtered, noun)))
 		parts = append(parts, "")
 	}
 

@@ -354,3 +354,22 @@ func TestPickTopWindow(t *testing.T) {
 		t.Errorf("empty: got %d, want 0", got)
 	}
 }
+
+func TestFiltersEqual(t *testing.T) {
+	cases := []struct {
+		name string
+		a, b map[int]bool
+		want bool
+	}{
+		{"both nil", nil, nil, true},
+		{"nil vs empty", nil, map[int]bool{}, true},
+		{"identical", map[int]bool{1: true, 2: true}, map[int]bool{1: true, 2: true}, true},
+		{"different size", map[int]bool{1: true}, map[int]bool{1: true, 2: true}, false},
+		{"same size, different ids", map[int]bool{1: true}, map[int]bool{2: true}, false},
+	}
+	for _, tc := range cases {
+		if got := filtersEqual(tc.a, tc.b); got != tc.want {
+			t.Errorf("%s: filtersEqual(%v, %v) = %v, want %v", tc.name, tc.a, tc.b, got, tc.want)
+		}
+	}
+}
