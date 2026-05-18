@@ -50,8 +50,8 @@ func TestTypeDigit_OverflowReplacesBuffer(t *testing.T) {
 }
 
 func TestAdjust_ClearsTypingBuffer(t *testing.T) {
-	// Reproducer for the bug fixed in this round: typing then nudging should
-	// not concatenate the next digit onto a stale buffer.
+	// Arrow after typing must clear the buffer so the next digit replaces
+	// rather than concatenates with the pre-nudge value.
 	d := newTestDialog()
 	d.focus = 4 // minute
 	d.typeDigit('5')

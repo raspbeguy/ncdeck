@@ -24,7 +24,8 @@ type stacksLoadedMsg struct {
 }
 
 type cardLoadedMsg struct {
-	card *api.Card
+	boardID int
+	card    *api.Card
 }
 
 // openCardMsg skips a GetCard round-trip by reusing the card already loaded
@@ -51,5 +52,3 @@ func (e errMsg) Error() string { return e.err.Error() }
 type backMsg struct{}
 
 type refreshMsg struct{}
-
-type statusMsg struct{ text string }

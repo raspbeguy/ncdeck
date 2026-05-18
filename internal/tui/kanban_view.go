@@ -270,7 +270,7 @@ func (k *kanbanModel) createCard(root *Model, title string) tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
-		_, err := root.client.CreateCard(root.ctx, k.boardID, s.ID, api.CreateCardInput{Title: title, Order: 999})
+		_, err := root.client.CreateCard(root.ctx, k.boardID, s.ID, api.CreateCardInput{Title: title, Order: api.OrderAtEnd})
 		if err != nil {
 			return errMsg{err}
 		}
@@ -280,7 +280,7 @@ func (k *kanbanModel) createCard(root *Model, title string) tea.Cmd {
 
 func (k *kanbanModel) createStack(root *Model, title string) tea.Cmd {
 	return func() tea.Msg {
-		_, err := root.client.CreateStack(root.ctx, k.boardID, api.StackInput{Title: title, Order: 999})
+		_, err := root.client.CreateStack(root.ctx, k.boardID, api.StackInput{Title: title, Order: api.OrderAtEnd})
 		if err != nil {
 			return errMsg{err}
 		}
@@ -354,6 +354,58 @@ func (k *kanbanModel) accentColor() lipgloss.Color {
 	return colSelected
 }
 
+// Only advances topIdx forward; the 'k' handler pulls it back when the
+// cursor moves above the window.
+func pickFocusedWindow(topIdx, cardIdx int, heights []int, avail int) (newTop, start, end int) {
+	newTop = topIdx
+	if newTop > cardIdx {
+		newTop = cardIdx
+	}
+	if newTop >= len(heights) {
+		newTop = len(heights) - 1
+	}
+	if newTop < 0 {
+		newTop = 0
+	}
+	for {
+		used := 0
+		fits := false
+		last := newTop
+		for i := newTop; i < len(heights); i++ {
+			if used+heights[i] > avail {
+				break
+			}
+			used += heights[i]
+			last = i
+			if i == cardIdx {
+				fits = true
+			}
+		}
+		if fits || newTop >= cardIdx {
+			return newTop, newTop, last + 1
+		}
+		newTop++
+	}
+}
+
+// Always returns at least 1 when len(heights) > 0 so non-focused columns
+// never collapse to "↓ N more" with no cards visible.
+func pickTopWindow(heights []int, avail int) int {
+	if len(heights) == 0 {
+		return 0
+	}
+	used := 0
+	end := 0
+	for end < len(heights) && used+heights[end] <= avail {
+		used += heights[end]
+		end++
+	}
+	if end == 0 {
+		end = 1
+	}
+	return end
+}
+
 func (k *kanbanModel) renderStack(s api.Stack, focused, highlight bool, w, h int) string {
 	accent := k.accentColor()
 	hdr := stackHeaderStyle.Width(w).Render(fmt.Sprintf("%s (%d)", s.Title, len(s.Cards)))
@@ -365,7 +417,7 @@ func (k *kanbanModel) renderStack(s api.Stack, focused, highlight bool, w, h int
 	heights := make([]int, len(s.Cards))
 	for i, c := range s.Cards {
 		sel := focused && i == k.cardIdx
-		rendered[i] = renderCardWithAccent(c, w-2, sel, accent)
+		rendered[i] = renderCard(c, w-2, sel, accent)
 		heights[i] = lipgloss.Height(rendered[i])
 	}
 
@@ -374,48 +426,17 @@ func (k *kanbanModel) renderStack(s api.Stack, focused, highlight bool, w, h int
 		avail = kanbanMinAvailRows
 	}
 
-	start, end := 0, len(rendered)
+	var start, end int
 	switch {
 	case len(rendered) == 0:
+		start, end = 0, 0
 	case focused:
-		// Advance topIdx until the cursor fits; the 'k' handler already
-		// pulls it back when the cursor moves above the window.
-		if k.topIdx > k.cardIdx {
-			k.topIdx = k.cardIdx
-		}
-		if k.topIdx >= len(rendered) {
-			k.topIdx = len(rendered) - 1
-		}
-		for {
-			used := 0
-			fits := false
-			last := k.topIdx
-			for i := k.topIdx; i < len(rendered); i++ {
-				if used+heights[i] > avail {
-					break
-				}
-				used += heights[i]
-				last = i
-				if i == k.cardIdx {
-					fits = true
-				}
-			}
-			if fits || k.topIdx >= k.cardIdx {
-				start, end = k.topIdx, last+1
-				break
-			}
-			k.topIdx++
-		}
+		var newTop int
+		newTop, start, end = pickFocusedWindow(k.topIdx, k.cardIdx, heights, avail)
+		k.topIdx = newTop
 	default:
-		used := 0
-		end = 0
-		for end < len(rendered) && used+heights[end] <= avail {
-			used += heights[end]
-			end++
-		}
-		if end == 0 && len(rendered) > 0 {
-			end = 1
-		}
+		start = 0
+		end = pickTopWindow(heights, avail)
 	}
 
 	parts := []string{hdr}
@@ -431,7 +452,7 @@ func (k *kanbanModel) renderStack(s api.Stack, focused, highlight bool, w, h int
 	return lipgloss.NewStyle().Width(w + 2).Padding(0, 1).Render(content)
 }
 
-func renderCardWithAccent(c api.Card, w int, selected bool, accent lipgloss.Color) string {
+func renderCard(c api.Card, w int, selected bool, accent lipgloss.Color) string {
 	style := cardStyle
 	if selected {
 		style = cardStyle.BorderForeground(accent).Bold(true)

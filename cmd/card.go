@@ -466,7 +466,7 @@ func init() {
 	cardCreateCmd.Flags().StringVar(&cardCreateDesc, "description", "", "card description (markdown)")
 	cardCreateCmd.Flags().StringVarP(&cardCreateDescFile, "description-file", "F", "", "read description from file (- for stdin)")
 	cardCreateCmd.Flags().StringVar(&cardCreateDue, "due", "", "due date (YYYY-MM-DD or RFC3339)")
-	cardCreateCmd.Flags().IntVar(&cardCreateOrder, "order", 999, "position within stack")
+	cardCreateCmd.Flags().IntVar(&cardCreateOrder, "order", api.OrderAtEnd, "position within stack")
 
 	cardEditCmd.Flags().StringVar(&cardEditTitle, "title", "", "new title")
 	cardEditCmd.Flags().StringVar(&cardEditDesc, "description", "", "new description")
@@ -475,7 +475,7 @@ func init() {
 	cardEditCmd.Flags().BoolVar(&cardEditDone, "done", false, "mark done (true) or undone (false)")
 
 	cardMoveCmd.Flags().IntVar(&cardMoveStack, "to-stack", 0, "destination stack ID")
-	cardMoveCmd.Flags().IntVar(&cardMoveOrder, "order", 999, "position within destination stack")
+	cardMoveCmd.Flags().IntVar(&cardMoveOrder, "order", api.OrderAtEnd, "position within destination stack")
 
 	cardDeleteCmd.Flags().BoolVar(&cardDeleteYes, "yes", false, "skip confirmation")
 

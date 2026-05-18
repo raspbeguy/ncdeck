@@ -75,6 +75,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		if m.card != nil {
+			m.card.resize(m.width, m.height-2)
+		}
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -82,9 +85,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case errMsg:
 		m.loading = false
 		m.errStr = msg.err.Error()
-		return m, nil
-	case statusMsg:
-		m.status = msg.text
 		return m, nil
 	case boardsLoadedMsg:
 		m.loading = false
@@ -142,24 +142,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case openCardMsg:
-		m.loading = false
-		m.errStr = ""
-		m.active = screenCard
-		if m.card == nil {
-			m.card = &cardModel{}
-		}
-		m.card.boardID = msg.boardID
-		m.card.setCard(msg.card, m.width, m.height)
-		return m, tea.Batch(m.loadComments(msg.card.ID), m.loadAttachments(msg.boardID, msg.card.StackID, msg.card.ID))
+		return m.enterCard(msg.boardID, msg.card)
 	case cardLoadedMsg:
-		m.loading = false
-		m.errStr = ""
-		m.active = screenCard
-		if m.card == nil {
-			m.card = &cardModel{}
-		}
-		m.card.setCard(msg.card, m.width, m.height)
-		return m, tea.Batch(m.loadComments(msg.card.ID), m.loadAttachments(m.card.boardID, msg.card.StackID, msg.card.ID))
+		return m.enterCard(msg.boardID, msg.card)
 	case commentsLoadedMsg:
 		if m.card != nil && m.card.cardID == msg.cardID {
 			m.card.setComments(msg.comments)
@@ -258,7 +243,7 @@ func (m *Model) loadCard(boardID, stackID, cardID int) tea.Cmd {
 		if err != nil {
 			return errMsg{err}
 		}
-		return cardLoadedMsg{k}
+		return cardLoadedMsg{boardID: boardID, card: k}
 	}
 }
 
@@ -299,4 +284,26 @@ func (m *Model) loadAttachments(boardID, stackID, cardID int) tea.Cmd {
 
 func (m *Model) setStatus(text string) {
 	m.status = text
+}
+
+func (m *Model) accent() lipgloss.Color {
+	if m.kanban != nil {
+		return m.kanban.accentColor()
+	}
+	return colSelected
+}
+
+func (m *Model) enterCard(boardID int, card *api.Card) (tea.Model, tea.Cmd) {
+	m.loading = false
+	m.errStr = ""
+	m.active = screenCard
+	if m.card == nil {
+		m.card = &cardModel{}
+	}
+	m.card.boardID = boardID
+	m.card.setCard(card, m.width, m.height)
+	return m, tea.Batch(
+		m.loadComments(card.ID),
+		m.loadAttachments(boardID, card.StackID, card.ID),
+	)
 }

@@ -24,6 +24,12 @@ const (
 	cardModeEditDue
 )
 
+// Matches modalStyle.Padding(1, 2) so the inner viewport sizes correctly.
+const (
+	cardModalPadH = 4
+	cardModalPadV = 6
+)
+
 type cardModel struct {
 	boardID  int
 	stackID  int
@@ -47,12 +53,24 @@ func (m *cardModel) setCard(c *api.Card, w, h int) {
 	m.cardID = c.ID
 	m.card = c
 	if m.vp.Width == 0 {
-		m.vp = viewport.New(w-4, h-6)
+		m.vp = viewport.New(w-cardModalPadH, h-cardModalPadV)
 	} else {
-		m.vp.Width = w - 4
-		m.vp.Height = h - 6
+		m.vp.Width = w - cardModalPadH
+		m.vp.Height = h - cardModalPadV
 	}
 	m.refreshBody()
+}
+
+func (m *cardModel) resize(w, h int) {
+	m.vp.Width = w - cardModalPadH
+	m.vp.Height = h - cardModalPadV
+	if m.editor.Width() > 0 {
+		m.editor.SetWidth(m.vp.Width)
+		m.editor.SetHeight(m.vp.Height - 2)
+	}
+	if m.card != nil {
+		m.refreshBody()
+	}
 }
 
 func (m *cardModel) setComments(cs []api.Comment) {
@@ -233,7 +251,7 @@ func (m *cardModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 		case "D":
 			return root, m.toggleDone(root)
 		case "d":
-			m.due = newDueDialog(m.card.DueDate, dueAccent(root))
+			m.due = newDueDialog(m.card.DueDate, root.accent())
 			m.mode = cardModeEditDue
 			return root, nil
 		}
@@ -265,17 +283,10 @@ func (m *cardModel) View(width, height int) string {
 	}
 }
 
-func dueAccent(root *Model) lipgloss.Color {
-	if root.kanban != nil && root.kanban.boardColor != "" {
-		return lipgloss.Color("#" + root.kanban.boardColor)
-	}
-	return colSelected
-}
-
-func (m *cardModel) saveDescription(root *Model, desc string) tea.Cmd {
-	in := api.UpdateCardInput{
+func (m *cardModel) baseInput() api.UpdateCardInput {
+	return api.UpdateCardInput{
 		Title:       m.card.Title,
-		Description: desc,
+		Description: m.card.Description,
 		Type:        m.card.Type,
 		Owner:       m.card.Owner.UID,
 		Order:       m.card.Order,
@@ -283,6 +294,9 @@ func (m *cardModel) saveDescription(root *Model, desc string) tea.Cmd {
 		DueDate:     m.card.DueDate,
 		Done:        m.card.Done,
 	}
+}
+
+func (m *cardModel) applyUpdate(root *Model, in api.UpdateCardInput) tea.Cmd {
 	return func() tea.Msg {
 		_, err := root.client.UpdateCard(root.ctx, m.boardID, m.card.StackID, m.card.ID, in)
 		if err != nil {
@@ -292,26 +306,18 @@ func (m *cardModel) saveDescription(root *Model, desc string) tea.Cmd {
 	}
 }
 
+func (m *cardModel) saveDescription(root *Model, desc string) tea.Cmd {
+	in := m.baseInput()
+	in.Description = desc
+	return m.applyUpdate(root, in)
+}
+
 // nil due sends JSON null (clear). The dialog guarantees RFC3339 output, so
 // no re-parsing.
 func (m *cardModel) saveDueDate(root *Model, due *string) tea.Cmd {
-	in := api.UpdateCardInput{
-		Title:       m.card.Title,
-		Description: m.card.Description,
-		Type:        m.card.Type,
-		Owner:       m.card.Owner.UID,
-		Order:       m.card.Order,
-		Archived:    m.card.Archived,
-		DueDate:     due,
-		Done:        m.card.Done,
-	}
-	return func() tea.Msg {
-		_, err := root.client.UpdateCard(root.ctx, m.boardID, m.card.StackID, m.card.ID, in)
-		if err != nil {
-			return errMsg{err}
-		}
-		return refreshMsg{}
-	}
+	in := m.baseInput()
+	in.DueDate = due
+	return m.applyUpdate(root, in)
 }
 
 func (m *cardModel) postComment(root *Model, text string) tea.Cmd {
@@ -340,26 +346,12 @@ func (m *cardModel) toggleArchive(root *Model) tea.Cmd {
 }
 
 func (m *cardModel) toggleDone(root *Model) tea.Cmd {
-	in := api.UpdateCardInput{
-		Title:       m.card.Title,
-		Description: m.card.Description,
-		Type:        m.card.Type,
-		Owner:       m.card.Owner.UID,
-		Order:       m.card.Order,
-		Archived:    m.card.Archived,
-		DueDate:     m.card.DueDate,
-	}
+	in := m.baseInput()
 	if m.card.Done == nil || *m.card.Done == "" {
 		s := time.Now().UTC().Format(time.RFC3339)
 		in.Done = &s
 	} else {
 		in.Done = nil
 	}
-	return func() tea.Msg {
-		_, err := root.client.UpdateCard(root.ctx, m.boardID, m.card.StackID, m.card.ID, in)
-		if err != nil {
-			return errMsg{err}
-		}
-		return refreshMsg{}
-	}
+	return m.applyUpdate(root, in)
 }

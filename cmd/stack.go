@@ -138,7 +138,7 @@ var stackDeleteCmd = &cobra.Command{
 }
 
 func init() {
-	stackCreateCmd.Flags().IntVar(&stackCreateOrder, "order", 999, "position among stacks")
+	stackCreateCmd.Flags().IntVar(&stackCreateOrder, "order", api.OrderAtEnd, "position among stacks")
 	stackDeleteCmd.Flags().BoolVar(&stackDeleteYes, "yes", false, "skip confirmation")
 	stackCmd.AddCommand(stackListCmd, stackCreateCmd, stackRenameCmd, stackDeleteCmd)
 	rootCmd.AddCommand(stackCmd)

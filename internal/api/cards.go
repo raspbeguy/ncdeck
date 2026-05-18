@@ -8,6 +8,10 @@ import (
 	"time"
 )
 
+// OrderAtEnd is the legacy "put at the end of the column" sentinel; the Deck
+// server normalises it to the actual last position.
+const OrderAtEnd = 999
+
 // ParseDueDate accepts RFC3339 verbatim or YYYY-MM-DD as local-midnight.
 // Empty input returns "" without error so callers choose the meaning
 // (no-change vs. clear).
