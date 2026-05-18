@@ -369,6 +369,7 @@ func (m *Model) enterCard(boardID int, card *api.Card) tea.Cmd {
 		m.card = &cardModel{}
 	}
 	m.card.boardID = boardID
+	m.card.accent = m.accent()
 	m.card.setCard(card, m.width, m.height-chromeRows)
 	return tea.Batch(
 		m.loadComments(card.ID),

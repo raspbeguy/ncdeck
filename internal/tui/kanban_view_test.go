@@ -96,6 +96,36 @@ func TestSetStacksThenPickFocusedWindow_SelfCorrectsOnShrink(t *testing.T) {
 
 // --- Update routing ---------------------------------------------------------
 
+func TestKanbanUpdate_QuestionMarkTogglesHelp(t *testing.T) {
+	m := &Model{ctx: context.Background()}
+	k := newKanbanModel(1)
+	m.kanban = k
+	_, _ = k.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}}, m)
+	if !k.showHelp {
+		t.Fatalf("first ? should open help")
+	}
+	_, _ = k.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}}, m)
+	if k.showHelp {
+		t.Errorf("second ? should close help")
+	}
+}
+
+// esc while the help overlay is open must close the overlay rather than
+// fire backMsg (which would dump the user out of the kanban entirely).
+func TestKanbanUpdate_EscClosesHelpInsteadOfGoingBack(t *testing.T) {
+	m := &Model{ctx: context.Background()}
+	k := newKanbanModel(1)
+	k.showHelp = true
+	m.kanban = k
+	_, cmd := k.Update(tea.KeyMsg{Type: tea.KeyEsc}, m)
+	if k.showHelp {
+		t.Errorf("esc should have closed help")
+	}
+	if cmd != nil {
+		t.Errorf("esc-closes-help should not return a cmd (no backMsg)")
+	}
+}
+
 func TestKanbanUpdate_JKMovesCursor(t *testing.T) {
 	m := &Model{ctx: context.Background()}
 	k := newKanbanModel(1)

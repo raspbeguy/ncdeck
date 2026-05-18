@@ -50,6 +50,8 @@ type cardModel struct {
 	due      dueDialog
 	labels   labelDialog
 	mode     cardMode
+	showHelp bool
+	accent   lipgloss.Color
 }
 
 func (m *cardModel) setCard(c *api.Card, w, h int) {
@@ -264,7 +266,14 @@ func (m *cardModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 
 	if km, ok := msg.(tea.KeyMsg); ok {
 		switch km.String() {
+		case "?":
+			m.showHelp = !m.showHelp
+			return root, nil
 		case "esc", "b", "q":
+			if m.showHelp {
+				m.showHelp = false
+				return root, nil
+			}
 			return root, func() tea.Msg { return backMsg{} }
 		case "r":
 			return root, func() tea.Msg { return refreshMsg{} }
@@ -312,6 +321,19 @@ func (m *cardModel) View(width, height int) string {
 	if m.card == nil {
 		return ""
 	}
+	if m.showHelp {
+		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, renderHelp("Card", []helpEntry{
+			{"e", "edit description"},
+			{"c", "add comment"},
+			{"l", "manage labels"},
+			{"d", "set due date"},
+			{"a", "archive / unarchive"},
+			{"D", "mark done / undone"},
+			{"r", "refresh"},
+			{"esc / b / q", "back to kanban"},
+			{"?", "toggle this help"},
+		}, m.accent))
+	}
 	if m.mode == cardModeEditDue {
 		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, m.due.view())
 	}
@@ -328,7 +350,7 @@ func (m *cardModel) View(width, height int) string {
 		footer = inputBoxStyle.Render(m.commentI.View()) + "\n" + helpStyle.Render("⏎ post  esc cancel")
 		return lipgloss.JoinVertical(lipgloss.Left, box, footer)
 	default:
-		footer = helpStyle.Render("e edit  c comment  l labels  d due  a archive  D done  r refresh  esc back  q quit")
+		footer = helpStyle.Render("e edit   c comment   l labels   d due   ? help   esc back")
 		return lipgloss.JoinVertical(lipgloss.Left, box, footer)
 	}
 }

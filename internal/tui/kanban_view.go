@@ -53,6 +53,8 @@ type kanbanModel struct {
 	// call doesn't queue a second move against the just-moved card.
 	reorderInFlight bool
 
+	showHelp bool
+
 	colWidth int
 }
 
@@ -120,9 +122,16 @@ func (k *kanbanModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
+		case "?":
+			k.showHelp = !k.showHelp
+			return root, nil
 		case "q":
 			return root, tea.Quit
 		case "esc":
+			if k.showHelp {
+				k.showHelp = false
+				return root, nil
+			}
 			if k.moveMode {
 				k.moveMode = false
 				root.setStatus("")
@@ -341,6 +350,21 @@ func (k *kanbanModel) doDelete(root *Model, c *api.Card) tea.Cmd {
 }
 
 func (k *kanbanModel) View(width, height int) string {
+	if k.showHelp {
+		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, renderHelp("Kanban", []helpEntry{
+			{"h / l or ←/→", "previous / next column"},
+			{"j / k or ↓/↑", "navigate cards in column"},
+			{"J / K", "reorder card down / up"},
+			{"⏎", "open card"},
+			{"n / N", "new card / new stack"},
+			{"m", "move card to another stack"},
+			{"a / x", "archive / delete card"},
+			{"r", "refresh"},
+			{"b / esc", "back to boards"},
+			{"q", "quit"},
+			{"?", "toggle this help"},
+		}, k.accentColor()))
+	}
 	if len(k.stacks) == 0 {
 		return subtleStyle.Render("\n  No stacks. Press 'N' to create one, b to go back.\n")
 	}
@@ -378,7 +402,7 @@ func (k *kanbanModel) View(width, height int) string {
 		cols = append(cols, k.renderStack(s, focused, highlight, colW, bodyHeight))
 	}
 
-	help := helpStyle.Render("h/l col  j/k card  J/K reorder  ⏎ open  n new  N stack  m move  a archive  x delete  r refresh  b back  q quit")
+	help := helpStyle.Render("h/l/j/k navigate   ⏎ open   ? help   b back")
 	if k.moveMode {
 		help = helpStyle.Render("MOVE: ←/→ pick target, ⏎ confirm, esc cancel")
 	}

@@ -11,8 +11,9 @@ import (
 )
 
 type boardsModel struct {
-	boards []api.Board
-	cursor int
+	boards   []api.Board
+	cursor   int
+	showHelp bool
 }
 
 func newBoardsModel() boardsModel {
@@ -30,7 +31,16 @@ func (b boardsModel) Update(msg tea.Msg, root *Model) (boardsModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "q", "esc":
+		case "?":
+			b.showHelp = !b.showHelp
+			return b, nil
+		case "esc":
+			if b.showHelp {
+				b.showHelp = false
+				return b, nil
+			}
+			return b, tea.Quit
+		case "q":
 			return b, tea.Quit
 		case "j", "down":
 			if b.cursor < len(b.boards)-1 {
@@ -59,6 +69,16 @@ func (b boardsModel) Update(msg tea.Msg, root *Model) (boardsModel, tea.Cmd) {
 }
 
 func (b boardsModel) View(width, height int) string {
+	if b.showHelp {
+		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, renderHelp("Boards", []helpEntry{
+			{"j / k or ↑/↓", "navigate"},
+			{"g / G", "first / last"},
+			{"⏎ or l", "open board"},
+			{"r", "refresh"},
+			{"q / esc", "quit"},
+			{"?", "toggle this help"},
+		}, colSelected))
+	}
 	if len(b.boards) == 0 {
 		return subtleStyle.Render("\n  No boards (press q to quit, r to retry).\n")
 	}
@@ -87,6 +107,6 @@ func (b boardsModel) View(width, height int) string {
 		}
 		rows = append(rows, marker+swatch+" "+title+meta)
 	}
-	rows = append(rows, "", helpStyle.Render("↑/↓ navigate  ⏎ open  r refresh  q quit"))
+	rows = append(rows, "", helpStyle.Render("↑/↓ ⏎ open   ? help   q quit"))
 	return lipgloss.NewStyle().Padding(1, 2).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
 }
