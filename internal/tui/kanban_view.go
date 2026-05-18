@@ -55,6 +55,16 @@ type kanbanModel struct {
 
 	showHelp bool
 
+	// labelFilter is the set of label IDs the kanban view is filtering by.
+	// A card passes when it has at least one label in this set; empty = no
+	// filter, show everything.
+	labelFilter map[int]bool
+
+	// labelMgr is the modal label-management dialog. labelMgrOpen mirrors
+	// the "is the manager on screen" state so View can route through it.
+	labelMgr     labelManager
+	labelMgrOpen bool
+
 	colWidth int
 }
 
@@ -84,13 +94,50 @@ func (k *kanbanModel) focusedCard() *api.Card {
 		return nil
 	}
 	s := k.stacks[k.stackIdx]
-	if k.cardIdx >= len(s.Cards) {
-		return nil
+	if len(k.labelFilter) == 0 {
+		if k.cardIdx >= len(s.Cards) {
+			return nil
+		}
+		return &s.Cards[k.cardIdx]
 	}
-	return &s.Cards[k.cardIdx]
+	// Cursor is the index into the filtered subset.
+	seen := 0
+	for i := range s.Cards {
+		if !matchesLabelFilter(s.Cards[i], k.labelFilter) {
+			continue
+		}
+		if seen == k.cardIdx {
+			return &s.Cards[i]
+		}
+		seen++
+	}
+	return nil
+}
+
+func (k *kanbanModel) visibleCardCount() int {
+	s := k.curStack()
+	if s == nil {
+		return 0
+	}
+	if len(k.labelFilter) == 0 {
+		return len(s.Cards)
+	}
+	n := 0
+	for _, c := range s.Cards {
+		if matchesLabelFilter(c, k.labelFilter) {
+			n++
+		}
+	}
+	return n
 }
 
 func (k *kanbanModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
+	if k.labelMgrOpen {
+		if km, ok := msg.(tea.KeyMsg); ok {
+			return root, k.handleLabelMgrKey(root, km)
+		}
+		return root, nil
+	}
 	// When the inline form is open every msg is forwarded to its textinput;
 	// the textinput ignores non-key messages so passing them through is safe.
 	if k.formKind != "" {
@@ -161,7 +208,7 @@ func (k *kanbanModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 				k.topIdx = 0
 			}
 		case "j", "down":
-			if s := k.curStack(); s != nil && k.cardIdx < len(s.Cards)-1 {
+			if k.cardIdx < k.visibleCardCount()-1 {
 				k.cardIdx++
 			}
 		case "k", "up":
@@ -172,9 +219,21 @@ func (k *kanbanModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 				}
 			}
 		case "J", "shift+down":
+			if len(k.labelFilter) > 0 {
+				root.setStatus("J/K reorder is disabled while a label filter is active")
+				return root, nil
+			}
 			return root, k.reorderWithin(root, +1)
 		case "K", "shift+up":
+			if len(k.labelFilter) > 0 {
+				root.setStatus("J/K reorder is disabled while a label filter is active")
+				return root, nil
+			}
 			return root, k.reorderWithin(root, -1)
+		case "L":
+			k.labelMgr = newLabelManager(k.boardLabels, copyFilter(k.labelFilter), k.accentColor())
+			k.labelMgrOpen = true
+			return root, nil
 		case "enter":
 			if k.moveMode {
 				return root, k.doMove(root)
@@ -350,6 +409,9 @@ func (k *kanbanModel) doDelete(root *Model, c *api.Card) tea.Cmd {
 }
 
 func (k *kanbanModel) View(width, height int) string {
+	if k.labelMgrOpen {
+		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, k.labelMgr.view())
+	}
 	if k.showHelp {
 		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, renderHelp("Kanban", []helpEntry{
 			{"h / l or ←/→", "previous / next column"},
@@ -359,6 +421,7 @@ func (k *kanbanModel) View(width, height int) string {
 			{"n / N", "new card / new stack"},
 			{"m", "move card to another stack"},
 			{"a / x", "archive / delete card"},
+			{"L", "manage / filter labels"},
 			{"r", "refresh"},
 			{"b / esc", "back to boards"},
 			{"q", "quit"},
@@ -410,6 +473,97 @@ func (k *kanbanModel) View(width, height int) string {
 		help = inputBoxStyle.Render(k.form.View()) + "\n" + helpStyle.Render("⏎ submit  esc cancel")
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, cols...) + "\n" + help
+}
+
+// handleLabelMgrKey dispatches a key to the manager dialog and fires whatever
+// command (create/update/delete) the manager asks for. Closing the manager
+// commits its filter into the kanban.
+func (k *kanbanModel) handleLabelMgrKey(root *Model, km tea.KeyMsg) tea.Cmd {
+	switch action := k.labelMgr.Update(km); action {
+	case lmgrActionClose:
+		k.labelFilter = k.labelMgr.filter
+		k.labelMgrOpen = false
+		// Filter may have shrunk the visible cards; reset cursor so it
+		// always lands on something visible.
+		k.cardIdx = 0
+		k.topIdx = 0
+		return nil
+	case lmgrActionCreate:
+		return k.cmdCreateLabel(root, k.labelMgr.pendingName, k.labelMgr.pendingColor)
+	case lmgrActionUpdateName:
+		l := k.labelMgr.current()
+		if l == nil {
+			return nil
+		}
+		return k.cmdUpdateLabel(root, l.ID, k.labelMgr.pendingName, l.Color)
+	case lmgrActionUpdateColor:
+		l := k.labelMgr.current()
+		if l == nil {
+			return nil
+		}
+		return k.cmdUpdateLabel(root, l.ID, l.Title, k.labelMgr.pendingColor)
+	case lmgrActionDelete:
+		l := k.labelMgr.current()
+		if l == nil {
+			return nil
+		}
+		return k.cmdDeleteLabel(root, l.ID)
+	}
+	return nil
+}
+
+func (k *kanbanModel) cmdCreateLabel(root *Model, name, color string) tea.Cmd {
+	boardID := k.boardID
+	return func() tea.Msg {
+		l, err := root.client.CreateLabel(root.ctx, boardID, api.LabelInput{Title: name, Color: color})
+		if err != nil {
+			return labelOpFailedMsg{boardID: boardID, err: err}
+		}
+		return labelCreatedMsg{boardID: boardID, label: *l}
+	}
+}
+
+func (k *kanbanModel) cmdUpdateLabel(root *Model, labelID int, name, color string) tea.Cmd {
+	boardID := k.boardID
+	return func() tea.Msg {
+		l, err := root.client.UpdateLabel(root.ctx, boardID, labelID, api.LabelInput{Title: name, Color: color})
+		if err != nil {
+			return labelOpFailedMsg{boardID: boardID, err: err}
+		}
+		return labelUpdatedMsg{boardID: boardID, label: *l}
+	}
+}
+
+func (k *kanbanModel) cmdDeleteLabel(root *Model, labelID int) tea.Cmd {
+	boardID := k.boardID
+	return func() tea.Msg {
+		if err := root.client.DeleteLabel(root.ctx, boardID, labelID); err != nil {
+			return labelOpFailedMsg{boardID: boardID, err: err}
+		}
+		return labelDeletedMsg{boardID: boardID, labelID: labelID}
+	}
+}
+
+func copyFilter(src map[int]bool) map[int]bool {
+	out := make(map[int]bool, len(src))
+	for k, v := range src {
+		out[k] = v
+	}
+	return out
+}
+
+// matchesLabelFilter is true when the card has at least one label in the
+// active filter, or the filter is empty (no filter).
+func matchesLabelFilter(c api.Card, filter map[int]bool) bool {
+	if len(filter) == 0 {
+		return true
+	}
+	for _, l := range c.Labels {
+		if filter[l.ID] {
+			return true
+		}
+	}
+	return false
 }
 
 func (k *kanbanModel) accentColor() lipgloss.Color {
@@ -473,18 +627,32 @@ func pickTopWindow(heights []int, avail int) int {
 
 func (k *kanbanModel) renderStack(s api.Stack, focused, highlight bool, w, h int) string {
 	accent := k.accentColor()
-	hdr := stackHeaderStyle.Width(w).Render(fmt.Sprintf("%s (%d)", s.Title, len(s.Cards)))
-	if highlight {
-		hdr = stackHeaderStyle.Foreground(accent).Underline(true).Width(w).Render(fmt.Sprintf("%s (%d)", s.Title, len(s.Cards)))
+	visible := s.Cards
+	if len(k.labelFilter) > 0 {
+		visible = visible[:0:0]
+		for _, c := range s.Cards {
+			if matchesLabelFilter(c, k.labelFilter) {
+				visible = append(visible, c)
+			}
+		}
 	}
 
-	if len(s.Cards) == 0 {
+	headerText := fmt.Sprintf("%s (%d)", s.Title, len(visible))
+	if len(visible) != len(s.Cards) {
+		headerText = fmt.Sprintf("%s (%d/%d)", s.Title, len(visible), len(s.Cards))
+	}
+	hdr := stackHeaderStyle.Width(w).Render(headerText)
+	if highlight {
+		hdr = stackHeaderStyle.Foreground(accent).Underline(true).Width(w).Render(headerText)
+	}
+
+	if len(visible) == 0 {
 		return columnWrapStyle.Width(w + kanbanColPadH).Render(hdr)
 	}
 
-	rendered := make([]string, len(s.Cards))
-	heights := make([]int, len(s.Cards))
-	for i, c := range s.Cards {
+	rendered := make([]string, len(visible))
+	heights := make([]int, len(visible))
+	for i, c := range visible {
 		sel := focused && i == k.cardIdx
 		rendered[i] = renderCard(c, w-kanbanColPadH, sel, accent)
 		heights[i] = lipgloss.Height(rendered[i])

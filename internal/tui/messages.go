@@ -74,3 +74,20 @@ type labelCreatedMsg struct {
 	boardID int
 	label   api.Label
 }
+
+// labelUpdatedMsg / labelDeletedMsg propagate manager mutations so the
+// kanban's cached palette and the manager dialog stay in sync.
+type labelUpdatedMsg struct {
+	boardID int
+	label   api.Label
+}
+
+type labelDeletedMsg struct {
+	boardID int
+	labelID int
+}
+
+type labelOpFailedMsg struct {
+	boardID int
+	err     error
+}
