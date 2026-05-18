@@ -114,14 +114,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.kanban.boardColor = msg.color
 		m.kanban.width = m.width
 		m.loading = true
-		cmds := []tea.Cmd{m.loadStacks(msg.boardID)}
-		if msg.color == "" {
-			cmds = append(cmds, m.loadBoardInfo(msg.boardID))
-		}
-		return m, tea.Batch(cmds...)
+		// loadBoardInfo also fetches the label palette for the label dialog;
+		// the boards picker only carries the color, so we always re-fetch.
+		return m, tea.Batch(m.loadStacks(msg.boardID), m.loadBoardInfo(msg.boardID))
 	case boardInfoMsg:
 		if m.onBoard(msg.boardID) {
 			m.kanban.boardColor = msg.color
+			m.kanban.boardLabels = msg.labels
 		}
 		return m, nil
 	case backMsg:
@@ -289,9 +288,9 @@ func (m *Model) loadBoardInfo(boardID int) tea.Cmd {
 	return func() tea.Msg {
 		b, err := m.client.GetBoard(m.ctx, boardID)
 		if err != nil {
-			return boardInfoMsg{boardID: boardID, color: ""} // non-fatal, keep default accent
+			return boardInfoMsg{boardID: boardID} // non-fatal, keep defaults
 		}
-		return boardInfoMsg{boardID: boardID, color: b.Color}
+		return boardInfoMsg{boardID: boardID, color: b.Color, labels: b.Labels}
 	}
 }
 

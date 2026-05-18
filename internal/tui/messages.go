@@ -16,6 +16,7 @@ type boardOpenedMsg struct {
 type boardInfoMsg struct {
 	boardID int
 	color   string
+	labels  []api.Label
 }
 
 type stacksLoadedMsg struct {

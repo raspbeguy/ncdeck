@@ -27,9 +27,10 @@ const (
 )
 
 type kanbanModel struct {
-	boardID    int
-	boardColor string
-	stacks     []api.Stack
+	boardID     int
+	boardColor  string
+	boardLabels []api.Label
+	stacks      []api.Stack
 	stackIdx   int
 	cardIdx    int
 	moveMode   bool

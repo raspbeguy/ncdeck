@@ -22,6 +22,7 @@ const (
 	cardModeEditDescription
 	cardModeAddComment
 	cardModeEditDue
+	cardModeEditLabels
 )
 
 // modalStyle's rounded border (1 each side) + Padding(1, 2) total. Verified
@@ -47,6 +48,7 @@ type cardModel struct {
 	editor   textarea.Model
 	commentI textinput.Model
 	due      dueDialog
+	labels   labelDialog
 	mode     cardMode
 }
 
@@ -160,6 +162,30 @@ func (m *cardModel) refreshBody() {
 
 func (m *cardModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 	switch m.mode {
+	case cardModeEditLabels:
+		var cmd tea.Cmd
+		if km, ok := msg.(tea.KeyMsg); ok {
+			switch km.String() {
+			case "esc":
+				m.mode = cardModeView
+				return root, nil
+			case "up":
+				m.labels.moveCursor(-1)
+				return root, nil
+			case "down":
+				m.labels.moveCursor(+1)
+				return root, nil
+			case "enter":
+				label, wasAssigned := m.labels.toggleSelected()
+				if label == nil {
+					return root, nil
+				}
+				return root, m.toggleLabel(root, label.ID, wasAssigned)
+			}
+		}
+		m.labels.input, cmd = m.labels.input.Update(msg)
+		m.labels.refilter()
+		return root, cmd
 	case cardModeEditDue:
 		if km, ok := msg.(tea.KeyMsg); ok {
 			s := km.String()
@@ -263,6 +289,14 @@ func (m *cardModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 			m.due = newDueDialog(m.card.DueDate, root.accent())
 			m.mode = cardModeEditDue
 			return root, nil
+		case "l":
+			var pool []api.Label
+			if root.kanban != nil {
+				pool = root.kanban.boardLabels
+			}
+			m.labels = newLabelDialog(pool, m.card.Labels, root.accent())
+			m.mode = cardModeEditLabels
+			return root, nil
 		}
 	}
 	var cmd tea.Cmd
@@ -277,6 +311,9 @@ func (m *cardModel) View(width, height int) string {
 	if m.mode == cardModeEditDue {
 		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, m.due.view())
 	}
+	if m.mode == cardModeEditLabels {
+		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, m.labels.view())
+	}
 	box := modalStyle.Render(m.vp.View())
 	var footer string
 	switch m.mode {
@@ -287,7 +324,7 @@ func (m *cardModel) View(width, height int) string {
 		footer = inputBoxStyle.Render(m.commentI.View()) + "\n" + helpStyle.Render("⏎ post  esc cancel")
 		return lipgloss.JoinVertical(lipgloss.Left, box, footer)
 	default:
-		footer = helpStyle.Render("e edit description  c comment  d due date  a archive  D done  r refresh  esc back  q quit")
+		footer = helpStyle.Render("e edit  c comment  l labels  d due  a archive  D done  r refresh  esc back  q quit")
 		return lipgloss.JoinVertical(lipgloss.Left, box, footer)
 	}
 }
@@ -332,6 +369,23 @@ func (m *cardModel) saveDueDate(root *Model, due *string) tea.Cmd {
 func (m *cardModel) postComment(root *Model, text string) tea.Cmd {
 	return func() tea.Msg {
 		_, err := root.client.AddComment(root.ctx, m.card.ID, text, 0)
+		if err != nil {
+			return errMsg{err}
+		}
+		return refreshMsg{}
+	}
+}
+
+// wasAssigned reflects the state *before* the optimistic flip the dialog
+// already applied; we use it to decide between Assign and Remove.
+func (m *cardModel) toggleLabel(root *Model, labelID int, wasAssigned bool) tea.Cmd {
+	return func() tea.Msg {
+		var err error
+		if wasAssigned {
+			err = root.client.RemoveLabelFromCard(root.ctx, m.boardID, m.card.StackID, m.card.ID, labelID)
+		} else {
+			err = root.client.AssignLabelToCard(root.ctx, m.boardID, m.card.StackID, m.card.ID, labelID)
+		}
 		if err != nil {
 			return errMsg{err}
 		}
