@@ -4,6 +4,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/raspbeguy/ncdeck/internal/api"
@@ -146,33 +147,43 @@ func TestEnterCard_PreservesModeOnRefresh(t *testing.T) {
 	}
 }
 
-func TestReorderedMsg_MovesCursorAndReloads(t *testing.T) {
+func TestReorderedMsg_ClearsInFlightFlag(t *testing.T) {
 	m := newRoutingModel()
 	m.active = screenKanban
 	m.kanban = newKanbanModel(7)
-	m.kanban.cardIdx = 3
-	m.kanban.topIdx = 2
-	_, cmd := m.Update(reorderedMsg{boardID: 7, newCardIdx: 1})
-	if m.kanban.cardIdx != 1 {
-		t.Errorf("cardIdx: got %d, want 1", m.kanban.cardIdx)
-	}
-	if m.kanban.topIdx != 1 {
-		t.Errorf("topIdx: got %d, want 1 (pulled back to match cursor)", m.kanban.topIdx)
-	}
-	if cmd == nil {
-		t.Errorf("expected a reload cmd to follow the cursor move")
+	m.kanban.reorderInFlight = true
+	_, _ = m.Update(reorderedMsg{boardID: 7})
+	if m.kanban.reorderInFlight {
+		t.Errorf("reorderInFlight should be false after confirmation")
 	}
 }
 
 func TestReorderedMsg_IgnoredForWrongBoard(t *testing.T) {
 	m := newRoutingModel()
 	m.kanban = newKanbanModel(7)
-	m.kanban.cardIdx = 5
-	_, cmd := m.Update(reorderedMsg{boardID: 99, newCardIdx: 1})
-	if m.kanban.cardIdx != 5 {
-		t.Errorf("cardIdx should not change when boardID mismatches, got %d", m.kanban.cardIdx)
+	m.kanban.reorderInFlight = true
+	_, cmd := m.Update(reorderedMsg{boardID: 99})
+	if !m.kanban.reorderInFlight {
+		t.Errorf("inFlight should stay set when boardID mismatches")
 	}
 	if cmd != nil {
 		t.Errorf("expected nil cmd on mismatched boardID, got %v", cmd)
+	}
+}
+
+func TestReorderFailedMsg_ResyncsKanban(t *testing.T) {
+	m := newRoutingModel()
+	m.active = screenKanban
+	m.kanban = newKanbanModel(7)
+	m.kanban.reorderInFlight = true
+	_, cmd := m.Update(reorderFailedMsg{boardID: 7, err: errors.New("boom")})
+	if m.kanban.reorderInFlight {
+		t.Errorf("inFlight should clear on failure")
+	}
+	if cmd == nil {
+		t.Errorf("expected a resync (loadStacks) cmd on failure")
+	}
+	if m.errStr == "" {
+		t.Errorf("expected an error message to surface to the user")
 	}
 }

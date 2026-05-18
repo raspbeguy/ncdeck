@@ -53,10 +53,16 @@ type backMsg struct{}
 
 type refreshMsg struct{}
 
-// reorderedMsg lets the kanban move its cursor onto the moved card *after*
-// the server confirms, instead of optimistically moving it first and trying
-// to roll back on failure.
+// reorderedMsg clears reorderInFlight after the server confirms a reorder
+// the kanban already applied optimistically. carries only boardID because
+// the cursor + local stack were updated synchronously when the press fired.
 type reorderedMsg struct {
-	boardID    int
-	newCardIdx int
+	boardID int
+}
+
+// reorderFailedMsg triggers a full reload to repair the optimistic local
+// state after a server rejection.
+type reorderFailedMsg struct {
+	boardID int
+	err     error
 }

@@ -3,8 +3,14 @@
 package tui
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/raspbeguy/ncdeck/internal/api"
 )
 
@@ -33,6 +39,98 @@ func TestSetStacks_SortsCardsWithinStack(t *testing.T) {
 	cards := k.stacks[0].Cards
 	if cards[0].Title != "y" || cards[1].Title != "x" || cards[2].Title != "z" {
 		t.Errorf("card order: got %s %s %s, want y x z", cards[0].Title, cards[1].Title, cards[2].Title)
+	}
+}
+
+// Two rapid J presses must each move the cursor + locally swap the cards
+// (so a future press operates on the correct card), and the in-flight gate
+// must prevent the *second* API call from racing against the first.
+func TestReorderWithin_OptimisticAndGated(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		// Hold the connection so the second press hits the gate.
+		time.Sleep(50 * time.Millisecond)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	m := &Model{
+		ctx:    context.Background(),
+		client: api.New(srv.URL, "u", "p"),
+	}
+	k := newKanbanModel(7)
+	k.stacks = []api.Stack{{ID: 1, Title: "A", Cards: []api.Card{
+		{ID: 10, Title: "a"},
+		{ID: 11, Title: "b"},
+		{ID: 12, Title: "c"},
+	}}}
+	k.stackIdx = 0
+	k.cardIdx = 0
+	m.kanban = k
+
+	cmd1 := k.reorderWithin(m, +1)
+	if k.cardIdx != 1 {
+		t.Fatalf("first press: cardIdx=%d, want 1 (optimistic)", k.cardIdx)
+	}
+	if k.stacks[0].Cards[0].ID != 11 || k.stacks[0].Cards[1].ID != 10 {
+		t.Errorf("first press: cards not swapped locally: %+v", k.stacks[0].Cards)
+	}
+	if !k.reorderInFlight {
+		t.Errorf("inFlight should be true after the first press")
+	}
+
+	// Second press while the first is still in flight must be a no-op.
+	cmd2 := k.reorderWithin(m, +1)
+	if cmd2 != nil {
+		t.Errorf("second press during in-flight: expected nil cmd")
+	}
+	if k.cardIdx != 1 {
+		t.Errorf("second press shouldn't move cursor: cardIdx=%d", k.cardIdx)
+	}
+
+	// Drain the first cmd so the test doesn't leak goroutines.
+	if cmd1 == nil {
+		t.Fatal("first press: expected a non-nil cmd")
+	}
+	msg := cmd1()
+	if _, ok := msg.(reorderedMsg); !ok {
+		t.Errorf("expected reorderedMsg, got %T", msg)
+	}
+	if hits.Load() != 1 {
+		t.Errorf("expected exactly 1 API call, got %d", hits.Load())
+	}
+}
+
+func TestReorderWithin_BoundsRejectsOutOfRange(t *testing.T) {
+	k := newKanbanModel(1)
+	k.stacks = []api.Stack{{ID: 1, Cards: []api.Card{{ID: 1}, {ID: 2}}}}
+	k.cardIdx = 0
+	m := &Model{ctx: context.Background(), client: api.New("http://x", "u", "p")}
+	if cmd := k.reorderWithin(m, -1); cmd != nil {
+		t.Errorf("expected nil cmd when target < 0")
+	}
+	k.cardIdx = 1
+	if cmd := k.reorderWithin(m, +1); cmd != nil {
+		t.Errorf("expected nil cmd when target >= len(Cards)")
+	}
+}
+
+// Kanban Update should let j/k change the cursor when not in form/move modes.
+func TestKanbanUpdate_JKMovesCursor(t *testing.T) {
+	m := &Model{ctx: context.Background()}
+	k := newKanbanModel(1)
+	k.stacks = []api.Stack{{ID: 1, Cards: []api.Card{
+		{ID: 1}, {ID: 2}, {ID: 3},
+	}}}
+	m.kanban = k
+	_, _ = k.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}, m)
+	if k.cardIdx != 1 {
+		t.Errorf("j: cardIdx=%d, want 1", k.cardIdx)
+	}
+	_, _ = k.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}, m)
+	if k.cardIdx != 0 {
+		t.Errorf("k: cardIdx=%d, want 0", k.cardIdx)
 	}
 }
 

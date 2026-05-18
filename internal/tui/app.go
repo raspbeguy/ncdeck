@@ -131,6 +131,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.card = nil
 		case screenKanban:
 			m.active = screenBoards
+			m.kanban = nil
 			m.loading = true
 			return m, m.loadBoards()
 		}
@@ -161,10 +162,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.enterCard(msg.boardID, msg.card)
 	case reorderedMsg:
 		if m.kanban != nil && m.kanban.boardID == msg.boardID {
-			m.kanban.cardIdx = msg.newCardIdx
-			if m.kanban.cardIdx < m.kanban.topIdx {
-				m.kanban.topIdx = m.kanban.cardIdx
-			}
+			m.kanban.reorderInFlight = false
+		}
+		return m, nil
+	case reorderFailedMsg:
+		m.errStr = msg.err.Error()
+		if m.kanban != nil && m.kanban.boardID == msg.boardID {
+			m.kanban.reorderInFlight = false
 			return m, m.loadStacks(msg.boardID)
 		}
 		return m, nil

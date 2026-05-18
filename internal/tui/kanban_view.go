@@ -17,6 +17,9 @@ import (
 const (
 	kanbanChromeRows      = 4 // header + help + spacing
 	kanbanColGutter       = 2
+	// kanbanColPadH is Padding(0, 1) on columnWrapStyle expressed as a total.
+	// Cards inside the wrapper render at colWidth - kanbanColPadH.
+	kanbanColPadH         = 2
 	kanbanMinBodyRows     = 5
 	kanbanScrollHintRows  = 2 // reserved for "↑/↓ N more"
 	kanbanMinAvailRows    = 3
@@ -44,6 +47,10 @@ type kanbanModel struct {
 	// width is the last terminal width seen via WindowSizeMsg, used to size
 	// the inline form. 0 before the first resize event arrives.
 	width int
+
+	// reorderInFlight gates J/K so a press during an outstanding ReorderCard
+	// call doesn't queue a second move against the just-moved card.
+	reorderInFlight bool
 
 	colWidth int
 }
@@ -204,9 +211,14 @@ func (k *kanbanModel) curStack() *api.Stack {
 // Deck interprets Order as the destination index in the sorted column and
 // renormalises everything else; passing cardIdx+delta is enough.
 //
-// Cursor moves only on success (via reorderedMsg) so a failed reorder doesn't
-// leave the cursor pointing at a different card than the user sees.
+// Optimistic: cursor moves and the local stack swaps immediately so rapid
+// J/K presses feel responsive. reorderInFlight gates against pressing again
+// before the server confirms (which would queue a stale move). On failure
+// the kanban resyncs by reloading stacks from the server.
 func (k *kanbanModel) reorderWithin(root *Model, delta int) tea.Cmd {
+	if k.reorderInFlight {
+		return nil
+	}
 	s := k.curStack()
 	if s == nil {
 		return nil
@@ -218,15 +230,24 @@ func (k *kanbanModel) reorderWithin(root *Model, delta int) tea.Cmd {
 	c := s.Cards[k.cardIdx]
 	stackID := s.ID
 	boardID := k.boardID
+
+	k.stacks[k.stackIdx].Cards[k.cardIdx], k.stacks[k.stackIdx].Cards[target] =
+		k.stacks[k.stackIdx].Cards[target], k.stacks[k.stackIdx].Cards[k.cardIdx]
+	k.cardIdx = target
+	if k.cardIdx < k.topIdx {
+		k.topIdx = k.cardIdx
+	}
+	k.reorderInFlight = true
+
 	return func() tea.Msg {
 		err := root.client.ReorderCard(root.ctx, boardID, c.ID, api.ReorderInput{
 			Order:   target,
 			StackID: stackID,
 		})
 		if err != nil {
-			return errMsg{err}
+			return reorderFailedMsg{boardID: boardID, err: err}
 		}
-		return reorderedMsg{boardID: boardID, newCardIdx: target}
+		return reorderedMsg{boardID: boardID}
 	}
 }
 
@@ -427,14 +448,14 @@ func (k *kanbanModel) renderStack(s api.Stack, focused, highlight bool, w, h int
 	}
 
 	if len(s.Cards) == 0 {
-		return columnWrapStyle.Width(w + 2).Render(hdr)
+		return columnWrapStyle.Width(w + kanbanColPadH).Render(hdr)
 	}
 
 	rendered := make([]string, len(s.Cards))
 	heights := make([]int, len(s.Cards))
 	for i, c := range s.Cards {
 		sel := focused && i == k.cardIdx
-		rendered[i] = renderCard(c, w-2, sel, accent)
+		rendered[i] = renderCard(c, w-kanbanColPadH, sel, accent)
 		heights[i] = lipgloss.Height(rendered[i])
 	}
 
@@ -461,7 +482,7 @@ func (k *kanbanModel) renderStack(s api.Stack, focused, highlight bool, w, h int
 		parts = append(parts, subtleStyle.Render(fmt.Sprintf("  ↓ %d more", len(rendered)-end)))
 	}
 
-	return columnWrapStyle.Width(w + 2).Render(lipgloss.JoinVertical(lipgloss.Left, parts...))
+	return columnWrapStyle.Width(w + kanbanColPadH).Render(lipgloss.JoinVertical(lipgloss.Left, parts...))
 }
 
 func renderCard(c api.Card, w int, selected bool, accent lipgloss.Color) string {

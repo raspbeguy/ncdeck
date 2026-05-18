@@ -29,6 +29,9 @@ const (
 const (
 	cardModalPadH = 6
 	cardModalPadV = 4
+	// Inset inside the viewport so the glamour-rendered markdown has 1 col
+	// of breathing room each side.
+	cardBodyInset = 2
 )
 
 type cardModel struct {
@@ -40,6 +43,7 @@ type cardModel struct {
 	attach   []api.Attachment
 
 	vp       viewport.Model
+	vpInit   bool
 	editor   textarea.Model
 	commentI textinput.Model
 	due      dueDialog
@@ -53,8 +57,9 @@ func (m *cardModel) setCard(c *api.Card, w, h int) {
 	m.stackID = c.StackID
 	m.cardID = c.ID
 	m.card = c
-	if m.vp.Width == 0 {
+	if !m.vpInit {
 		m.vp = viewport.New(w-cardModalPadH, h-cardModalPadV)
+		m.vpInit = true
 	} else {
 		m.vp.Width = w - cardModalPadH
 		m.vp.Height = h - cardModalPadV
@@ -68,6 +73,9 @@ func (m *cardModel) resize(w, h int) {
 	if m.editor.Width() > 0 {
 		m.editor.SetWidth(m.vp.Width)
 		m.editor.SetHeight(m.vp.Height - 2)
+	}
+	if m.commentI.Width > 0 {
+		m.commentI.Width = m.vp.Width
 	}
 	if m.card != nil {
 		m.refreshBody()
@@ -126,7 +134,7 @@ func (m *cardModel) refreshBody() {
 	if desc == "" {
 		desc = "_(no description)_"
 	}
-	b.WriteString(renderMarkdown(desc, m.vp.Width-2))
+	b.WriteString(renderMarkdown(desc, m.vp.Width-cardBodyInset))
 
 	if len(m.attach) > 0 {
 		b.WriteString("\n" + lipgloss.NewStyle().Bold(true).Render("Attachments") + "\n")
