@@ -68,7 +68,7 @@ func (m *Model) Init() tea.Cmd {
 	if m.active == screenBoards {
 		cmds = append(cmds, m.loadBoards())
 	} else if m.kanban != nil {
-		cmds = append(cmds, m.loadStacks(m.kanban.boardID))
+		cmds = append(cmds, m.loadStacks(m.kanban.boardID), m.loadBoardInfo(m.kanban.boardID))
 	}
 	return tea.Batch(cmds...)
 }
@@ -104,8 +104,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case boardOpenedMsg:
 		m.active = screenKanban
 		m.kanban = newKanbanModel(msg.boardID)
+		m.kanban.boardColor = msg.color
 		m.loading = true
-		return m, m.loadStacks(msg.boardID)
+		cmds := []tea.Cmd{m.loadStacks(msg.boardID)}
+		if msg.color == "" {
+			cmds = append(cmds, m.loadBoardInfo(msg.boardID))
+		}
+		return m, tea.Batch(cmds...)
+	case boardInfoMsg:
+		if m.kanban != nil && m.kanban.boardID == msg.boardID {
+			m.kanban.boardColor = msg.color
+		}
+		return m, nil
 	case backMsg:
 		switch m.active {
 		case screenCard:
@@ -267,6 +277,17 @@ func (m *Model) loadComments(cardID int) tea.Cmd {
 			return commentsLoadedMsg{cardID, nil}
 		}
 		return commentsLoadedMsg{cardID, cs}
+	}
+}
+
+func (m *Model) loadBoardInfo(boardID int) tea.Cmd {
+	return func() tea.Msg {
+		b, err := m.client.GetBoard(m.ctx, boardID)
+		if err != nil {
+			// Non-fatal: just keep the default accent.
+			return boardInfoMsg{boardID: boardID, color: ""}
+		}
+		return boardInfoMsg{boardID: boardID, color: b.Color}
 	}
 }
 

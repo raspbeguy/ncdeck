@@ -12,6 +12,14 @@ type boardsLoadedMsg struct {
 
 type boardOpenedMsg struct {
 	boardID int
+	color   string // empty when launched directly without going through the picker
+}
+
+// boardInfoMsg carries the board's metadata (currently the colour) for the
+// kanban screen to use for focus highlights when launched directly.
+type boardInfoMsg struct {
+	boardID int
+	color   string
 }
 
 type stacksLoadedMsg struct {

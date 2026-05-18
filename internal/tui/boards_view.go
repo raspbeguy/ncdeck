@@ -48,8 +48,8 @@ func (b boardsModel) Update(msg tea.Msg, root *Model) (boardsModel, tea.Cmd) {
 			return b, func() tea.Msg { return refreshMsg{} }
 		case "enter", "l", "right":
 			if len(b.boards) > 0 {
-				id := b.boards[b.cursor].ID
-				return b, func() tea.Msg { return boardOpenedMsg{id} }
+				board := b.boards[b.cursor]
+				return b, func() tea.Msg { return boardOpenedMsg{boardID: board.ID, color: board.Color} }
 			}
 		}
 	}
@@ -65,14 +65,15 @@ func (b boardsModel) View(width, height int) string {
 		"",
 	}
 	for i, board := range b.boards {
+		boardCol := lipgloss.Color("#" + board.Color)
 		marker := "  "
 		if i == b.cursor {
-			marker = lipgloss.NewStyle().Foreground(colSelected).Render("▌ ")
+			marker = lipgloss.NewStyle().Foreground(boardCol).Render("▌ ")
 		}
-		swatch := lipgloss.NewStyle().Background(lipgloss.Color("#" + board.Color)).Render("   ")
+		swatch := lipgloss.NewStyle().Background(boardCol).Render("   ")
 		title := board.Title
 		if i == b.cursor {
-			title = lipgloss.NewStyle().Foreground(colSelected).Bold(true).Render(title)
+			title = lipgloss.NewStyle().Foreground(boardCol).Bold(true).Render(title)
 		}
 		meta := subtleStyle.Render(fmt.Sprintf("  #%d  %s", board.ID, board.OwnerRaw.UID))
 		if board.Archived {

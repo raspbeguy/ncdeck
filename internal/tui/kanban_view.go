@@ -16,8 +16,9 @@ import (
 
 // kanbanModel renders horizontally scrolling columns of cards for a board.
 type kanbanModel struct {
-	boardID int
-	stacks  []api.Stack
+	boardID    int
+	boardColor string // hex without #, empty until loaded
+	stacks     []api.Stack
 	// cursor: index into stacks for the focused column, index into that stack's
 	// cards for the focused card.
 	stackIdx int
@@ -347,10 +348,18 @@ func (k *kanbanModel) View(width, height int) string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, cols...) + "\n" + help
 }
 
+func (k *kanbanModel) accentColor() lipgloss.Color {
+	if k.boardColor != "" {
+		return lipgloss.Color("#" + k.boardColor)
+	}
+	return colSelected
+}
+
 func (k *kanbanModel) renderStack(s api.Stack, focused, highlight bool, w, h int) string {
+	accent := k.accentColor()
 	hdr := stackHeaderStyle.Width(w).Render(fmt.Sprintf("%s (%d)", s.Title, len(s.Cards)))
 	if highlight {
-		hdr = stackHeaderSel.Width(w).Render(fmt.Sprintf("%s (%d)", s.Title, len(s.Cards)))
+		hdr = stackHeaderStyle.Foreground(accent).Underline(true).Width(w).Render(fmt.Sprintf("%s (%d)", s.Title, len(s.Cards)))
 	}
 
 	// Render every card once and record its actual rendered height, so we can
@@ -359,7 +368,7 @@ func (k *kanbanModel) renderStack(s api.Stack, focused, highlight bool, w, h int
 	heights := make([]int, len(s.Cards))
 	for i, c := range s.Cards {
 		sel := focused && i == k.cardIdx
-		rendered[i] = renderCard(c, w-2, sel)
+		rendered[i] = renderCardWithAccent(c, w-2, sel, accent)
 		heights[i] = lipgloss.Height(rendered[i])
 	}
 
@@ -431,9 +440,13 @@ func (k *kanbanModel) renderStack(s api.Stack, focused, highlight bool, w, h int
 }
 
 func renderCard(c api.Card, w int, selected bool) string {
+	return renderCardWithAccent(c, w, selected, colSelected)
+}
+
+func renderCardWithAccent(c api.Card, w int, selected bool, accent lipgloss.Color) string {
 	style := cardStyle
 	if selected {
-		style = cardStyleSel
+		style = cardStyle.BorderForeground(accent).Bold(true)
 	}
 	style = style.Width(w)
 
