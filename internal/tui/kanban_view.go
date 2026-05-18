@@ -187,7 +187,7 @@ func (k *kanbanModel) doMove(root *Model) tea.Cmd {
 	dst := k.stacks[k.moveTarget]
 	k.moveMode = false
 	return func() tea.Msg {
-		err := root.client.ReorderCard(root.ctx, k.boardID, src.ID, c.ID, api.ReorderInput{Order: 999, StackID: dst.ID})
+		err := root.client.ReorderCard(root.ctx, k.boardID, c.ID, api.ReorderInput{Order: 0, StackID: dst.ID})
 		if err != nil {
 			return errMsg{err}
 		}

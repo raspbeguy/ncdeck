@@ -257,7 +257,7 @@ var cardMoveCmd = &cobra.Command{
 	Short: "Move a card to a different stack and/or position",
 	Args:  cobra.ExactArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		boardID, stackID, cardID, err := parseTripleID(args)
+		boardID, _, cardID, err := parseTripleID(args)
 		if err != nil {
 			return err
 		}
@@ -268,7 +268,7 @@ var cardMoveCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if err := c.ReorderCard(cmd.Context(), boardID, stackID, cardID, api.ReorderInput{Order: cardMoveOrder, StackID: cardMoveStack}); err != nil {
+		if err := c.ReorderCard(cmd.Context(), boardID, cardID, api.ReorderInput{Order: cardMoveOrder, StackID: cardMoveStack}); err != nil {
 			return err
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Moved card %d to stack %d (order %d)\n", cardID, cardMoveStack, cardMoveOrder)

@@ -96,7 +96,11 @@ type ReorderInput struct {
 	StackID int `json:"stackId"`
 }
 
-func (c *Client) ReorderCard(ctx context.Context, boardID, stackID, cardID int, in ReorderInput) error {
-	path := fmt.Sprintf("/boards/%d/stacks/%d/cards/%d/reorder", boardID, stackID, cardID)
+// ReorderCard moves a card to (or within) the stack identified by in.StackID
+// and sets its order. The Deck API's reorder route takes the destination stack
+// ID in the URL path, not the source: passing the source silently no-ops the
+// stack change.
+func (c *Client) ReorderCard(ctx context.Context, boardID, cardID int, in ReorderInput) error {
+	path := fmt.Sprintf("/boards/%d/stacks/%d/cards/%d/reorder", boardID, in.StackID, cardID)
 	return c.do(ctx, "PUT", path, in, nil)
 }
