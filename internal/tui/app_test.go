@@ -67,6 +67,61 @@ func TestUpdate_BackFromCardToKanban(t *testing.T) {
 	}
 }
 
+func TestUpdate_BackFromCardRefreshesKanban(t *testing.T) {
+	m := newRoutingModel()
+	m.active = screenCard
+	m.card = &cardModel{}
+	m.kanban = newKanbanModel(7)
+	_, cmd := m.Update(backMsg{})
+	if cmd == nil {
+		t.Errorf("expected a loadStacks cmd so the kanban shows fresh data on return")
+	}
+	if !m.loading {
+		t.Errorf("loading should be true while the kanban refresh is in flight")
+	}
+}
+
+func TestUpdate_OpenCardMsgFiresBackgroundRefresh(t *testing.T) {
+	m := newRoutingModel()
+	m.active = screenKanban
+	m.kanban = newKanbanModel(7)
+	card := &api.Card{ID: 42, StackID: 9, Title: "cached"}
+	_, cmd := m.Update(openCardMsg{boardID: 7, card: card})
+	if cmd == nil {
+		t.Fatal("expected a batched cmd including the background loadCard")
+	}
+	if m.card == nil || m.card.card == nil || m.card.card.Title != "cached" {
+		t.Errorf("cached card not displayed: %+v", m.card)
+	}
+}
+
+func TestCardLoadedMsg_PatchesCardWithoutReentering(t *testing.T) {
+	m := newRoutingModel()
+	m.active = screenCard
+	m.card = &cardModel{cardID: 42, stackID: 9, card: &api.Card{ID: 42, Title: "old"}, mode: cardModeEditDescription}
+	m.card.vp.Width = 80
+	m.card.vp.Height = 20
+	fresh := &api.Card{ID: 42, StackID: 9, Title: "new"}
+	_, _ = m.Update(cardLoadedMsg{boardID: 7, card: fresh})
+	if m.card.card.Title != "new" {
+		t.Errorf("card data not patched: got title=%q, want %q", m.card.card.Title, "new")
+	}
+	if m.card.mode != cardModeEditDescription {
+		t.Errorf("mode must be preserved across background refresh, got %d", m.card.mode)
+	}
+}
+
+func TestCardLoadedMsg_IgnoresStaleCardID(t *testing.T) {
+	m := newRoutingModel()
+	m.active = screenCard
+	m.card = &cardModel{cardID: 42, card: &api.Card{ID: 42, Title: "current"}}
+	stale := &api.Card{ID: 99, Title: "wrong"}
+	_, _ = m.Update(cardLoadedMsg{boardID: 7, card: stale})
+	if m.card.card.Title != "current" {
+		t.Errorf("stale cardLoadedMsg shouldn't overwrite the current card: got %q", m.card.card.Title)
+	}
+}
+
 func TestUpdate_BackFromKanbanToBoards(t *testing.T) {
 	m := newRoutingModel()
 	m.active = screenKanban

@@ -128,6 +128,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case screenCard:
 			m.active = screenKanban
 			m.card = nil
+			// Refresh the kanban so changes made in the card detail (labels,
+			// description, archive, etc.) show up immediately on return.
+			if m.kanban != nil {
+				m.loading = true
+				return m, m.loadStacks(m.kanban.boardID)
+			}
 		case screenKanban:
 			m.active = screenBoards
 			m.kanban = nil
@@ -156,9 +162,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case openCardMsg:
-		return m, m.enterCard(msg.boardID, msg.card)
+		// Show the cached card immediately, then refresh from the server in
+		// the background; cardLoadedMsg replaces m.card.card when it arrives.
+		enter := m.enterCard(msg.boardID, msg.card)
+		refresh := m.loadCard(msg.boardID, msg.card.StackID, msg.card.ID)
+		return m, tea.Batch(enter, refresh)
 	case cardLoadedMsg:
-		return m, m.enterCard(msg.boardID, msg.card)
+		// Background card refresh; refreshMsg fires comments/attachments
+		// alongside this, so cardLoadedMsg only patches the card object.
+		if m.card != nil && m.card.cardID == msg.card.ID {
+			m.card.card = msg.card
+			m.card.stackID = msg.card.StackID
+			m.card.refreshBody()
+		}
+		return m, nil
 	case reorderedMsg:
 		if m.onBoard(msg.boardID) {
 			m.kanban.reorderInFlight = false
