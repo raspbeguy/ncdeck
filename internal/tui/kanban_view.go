@@ -139,6 +139,10 @@ func (k *kanbanModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 					k.topIdx = k.cardIdx
 				}
 			}
+		case "J", "shift+down":
+			return root, k.reorderWithin(root, +1)
+		case "K", "shift+up":
+			return root, k.reorderWithin(root, -1)
 		case "enter":
 			if k.moveMode {
 				return root, k.doMove(root)
@@ -186,6 +190,38 @@ func (k *kanbanModel) curStack() *api.Stack {
 		return nil
 	}
 	return &k.stacks[k.stackIdx]
+}
+
+// reorderWithin shifts the focused card up (-1) or down (+1) one slot in its
+// own stack. The Deck server interprets ReorderInput.Order as the destination
+// index in the sorted column, so passing cardIdx+delta is enough; the server
+// renormalises every other card's order. The cursor follows the moved card so
+// the user can chain J/K presses.
+func (k *kanbanModel) reorderWithin(root *Model, delta int) tea.Cmd {
+	s := k.curStack()
+	if s == nil {
+		return nil
+	}
+	target := k.cardIdx + delta
+	if target < 0 || target >= len(s.Cards) {
+		return nil
+	}
+	c := s.Cards[k.cardIdx]
+	stackID := s.ID
+	k.cardIdx = target
+	if k.cardIdx < k.topIdx {
+		k.topIdx = k.cardIdx
+	}
+	return func() tea.Msg {
+		err := root.client.ReorderCard(root.ctx, k.boardID, c.ID, api.ReorderInput{
+			Order:   target,
+			StackID: stackID,
+		})
+		if err != nil {
+			return errMsg{err}
+		}
+		return refreshMsg{}
+	}
 }
 
 func (k *kanbanModel) doMove(root *Model) tea.Cmd {
@@ -301,7 +337,7 @@ func (k *kanbanModel) View(width, height int) string {
 		cols = append(cols, k.renderStack(s, focused, highlight, colW, bodyHeight))
 	}
 
-	help := helpStyle.Render("h/l columns  j/k cards  ⏎ open  n new card  N new stack  m move  a archive  x delete  r refresh  b back  q quit")
+	help := helpStyle.Render("h/l col  j/k card  J/K reorder  ⏎ open  n new  N stack  m move  a archive  x delete  r refresh  b back  q quit")
 	if k.moveMode {
 		help = helpStyle.Render("MOVE: ←/→ pick target, ⏎ confirm, esc cancel")
 	}
