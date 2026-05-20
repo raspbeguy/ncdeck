@@ -79,7 +79,12 @@ func (m *cardModel) resize(w, h int) {
 	m.vp.Height = h - cardModalPadV
 	if m.editor.Width() > 0 {
 		m.editor.SetWidth(m.vp.Width)
-		m.editor.SetHeight(m.vp.Height - 2)
+		// -4 reserves rows for the inputBox border, help line, and one modal content row.
+		h := m.vp.Height - 4
+		if h < 1 {
+			h = 1
+		}
+		m.editor.SetHeight(h)
 	}
 	if m.commentI.Width > 0 {
 		m.commentI.Width = m.vp.Width
@@ -328,7 +333,11 @@ func (m *cardModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 			ta := textarea.New()
 			ta.SetValue(m.card.Description)
 			ta.SetWidth(m.vp.Width)
-			ta.SetHeight(m.vp.Height - 2)
+			h := m.vp.Height - 4
+			if h < 1 {
+				h = 1
+			}
+			ta.SetHeight(h)
 			ta.Focus()
 			m.editor = ta
 			m.mode = cardModeEditDescription
@@ -381,7 +390,6 @@ func (m *cardModel) View(width, height int) string {
 	if m.mode == cardModeEditLabels {
 		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, m.labels.view())
 	}
-	box := modalStyle.Render(m.vp.View())
 	var footer string
 	switch m.mode {
 	case cardModeEditTitle:
@@ -394,17 +402,27 @@ func (m *cardModel) View(width, height int) string {
 			helpStyle.Render("⏎ save  esc cancel"),
 		)
 		footer = lipgloss.JoinVertical(lipgloss.Left, parts...)
-		return lipgloss.JoinVertical(lipgloss.Left, box, footer)
 	case cardModeEditDescription:
 		footer = inputBoxStyle.Render(m.editor.View()) + "\n" + helpStyle.Render("ctrl+s save  esc cancel")
-		return lipgloss.JoinVertical(lipgloss.Left, box, footer)
 	case cardModeAddComment:
 		footer = inputBoxStyle.Render(m.commentI.View()) + "\n" + helpStyle.Render("⏎ post  esc cancel")
-		return lipgloss.JoinVertical(lipgloss.Left, box, footer)
 	default:
 		footer = helpStyle.Render("t title   b body   c comment   l labels   d due   ? help   esc back")
-		return lipgloss.JoinVertical(lipgloss.Left, box, footer)
 	}
+
+	// Without this clamp the modal pushes the app header (and its status flash) offscreen.
+	footerH := lipgloss.Height(footer)
+	boxH := height - footerH
+	if boxH < cardModalPadV+1 {
+		boxH = cardModalPadV + 1
+	}
+	vp := m.vp
+	vp.Height = boxH - cardModalPadV
+	if vp.Height < 1 {
+		vp.Height = 1
+	}
+	box := modalStyle.Render(vp.View())
+	return lipgloss.JoinVertical(lipgloss.Left, box, footer)
 }
 
 func (m *cardModel) baseInput() api.UpdateCardInput {
