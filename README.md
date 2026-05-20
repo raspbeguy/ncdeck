@@ -167,12 +167,15 @@ In move mode (`m`), the left/right arrows pick a target column; `enter` confirms
 
 | Key             | Action                       |
 | --------------- | ---------------------------- |
-| `e`             | Edit description (multiline) |
+| `t`             | Edit title                   |
+| `b`             | Edit description (body)      |
 | `c`             | Add a comment                |
+| `l`             | Manage labels                |
+| `d`             | Set due date                 |
 | `a`             | Toggle archive               |
 | `D`             | Toggle done                  |
 | `r`             | Refresh                      |
-| `esc` / `b`     | Close                        |
+| `esc`           | Back to kanban               |
 | `q`             | Quit                         |
 
 Card descriptions are rendered with [glamour](https://github.com/charmbracelet/glamour);

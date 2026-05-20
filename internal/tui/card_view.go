@@ -19,6 +19,7 @@ type cardMode int
 
 const (
 	cardModeView cardMode = iota
+	cardModeEditTitle
 	cardModeEditDescription
 	cardModeAddComment
 	cardModeEditDue
@@ -46,6 +47,8 @@ type cardModel struct {
 	vp       viewport.Model
 	vpInit   bool
 	editor   textarea.Model
+	titleI   textinput.Model
+	titleErr string
 	commentI textinput.Model
 	due      dueDialog
 	labels   labelDialog
@@ -80,6 +83,9 @@ func (m *cardModel) resize(w, h int) {
 	}
 	if m.commentI.Width > 0 {
 		m.commentI.Width = m.vp.Width
+	}
+	if m.titleI.Width > 0 {
+		m.titleI.Width = m.vp.Width
 	}
 	if m.card != nil {
 		m.refreshBody()
@@ -228,6 +234,28 @@ func (m *cardModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 			}
 		}
 		return root, nil
+	case cardModeEditTitle:
+		var cmd tea.Cmd
+		if km, ok := msg.(tea.KeyMsg); ok {
+			switch km.String() {
+			case "esc":
+				m.titleErr = ""
+				m.mode = cardModeView
+				return root, nil
+			case "enter":
+				title := strings.TrimSpace(m.titleI.Value())
+				if title == "" {
+					m.titleErr = "title can't be empty"
+					return root, nil
+				}
+				m.titleErr = ""
+				m.mode = cardModeView
+				return root, m.saveTitle(root, title)
+			}
+			m.titleErr = ""
+		}
+		m.titleI, cmd = m.titleI.Update(msg)
+		return root, cmd
 	case cardModeEditDescription:
 		var cmd tea.Cmd
 		if km, ok := msg.(tea.KeyMsg); ok {
@@ -269,12 +297,14 @@ func (m *cardModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 		case "?":
 			m.showHelp = !m.showHelp
 			return root, nil
-		case "esc", "b", "q":
+		case "esc":
 			if m.showHelp {
 				m.showHelp = false
 				return root, nil
 			}
 			return root, func() tea.Msg { return backMsg{} }
+		case "q":
+			return root, tea.Quit
 		case "r":
 			return root, func() tea.Msg { return refreshMsg{} }
 		case "c":
@@ -285,7 +315,16 @@ func (m *cardModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 			m.commentI = ti
 			m.mode = cardModeAddComment
 			return root, nil
-		case "e":
+		case "t":
+			ti := textinput.New()
+			ti.SetValue(m.card.Title)
+			ti.CursorEnd()
+			ti.Focus()
+			ti.Width = m.vp.Width
+			m.titleI = ti
+			m.mode = cardModeEditTitle
+			return root, nil
+		case "b":
 			ta := textarea.New()
 			ta.SetValue(m.card.Description)
 			ta.SetWidth(m.vp.Width)
@@ -323,14 +362,16 @@ func (m *cardModel) View(width, height int) string {
 	}
 	if m.showHelp {
 		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, renderHelp("Card", []helpEntry{
-			{"e", "edit description"},
+			{"t", "edit title"},
+			{"b", "edit description (body)"},
 			{"c", "add comment"},
 			{"l", "manage labels"},
 			{"d", "set due date"},
 			{"a", "archive / unarchive"},
 			{"D", "mark done / undone"},
 			{"r", "refresh"},
-			{"esc / b / q", "back to kanban"},
+			{"esc", "back to kanban"},
+			{"q", "quit"},
 			{"?", "toggle this help"},
 		}, m.accent))
 	}
@@ -343,6 +384,17 @@ func (m *cardModel) View(width, height int) string {
 	box := modalStyle.Render(m.vp.View())
 	var footer string
 	switch m.mode {
+	case cardModeEditTitle:
+		parts := make([]string, 0, 3)
+		if m.titleErr != "" {
+			parts = append(parts, lipgloss.NewStyle().Foreground(colDanger).Render(m.titleErr))
+		}
+		parts = append(parts,
+			inputBoxStyle.Render(m.titleI.View()),
+			helpStyle.Render("⏎ save  esc cancel"),
+		)
+		footer = lipgloss.JoinVertical(lipgloss.Left, parts...)
+		return lipgloss.JoinVertical(lipgloss.Left, box, footer)
 	case cardModeEditDescription:
 		footer = inputBoxStyle.Render(m.editor.View()) + "\n" + helpStyle.Render("ctrl+s save  esc cancel")
 		return lipgloss.JoinVertical(lipgloss.Left, box, footer)
@@ -350,7 +402,7 @@ func (m *cardModel) View(width, height int) string {
 		footer = inputBoxStyle.Render(m.commentI.View()) + "\n" + helpStyle.Render("⏎ post  esc cancel")
 		return lipgloss.JoinVertical(lipgloss.Left, box, footer)
 	default:
-		footer = helpStyle.Render("e edit   c comment   l labels   d due   ? help   esc back")
+		footer = helpStyle.Render("t title   b body   c comment   l labels   d due   ? help   esc back")
 		return lipgloss.JoinVertical(lipgloss.Left, box, footer)
 	}
 }
@@ -376,6 +428,12 @@ func (m *cardModel) applyUpdate(root *Model, in api.UpdateCardInput) tea.Cmd {
 		}
 		return refreshMsg{}
 	}
+}
+
+func (m *cardModel) saveTitle(root *Model, title string) tea.Cmd {
+	in := m.baseInput()
+	in.Title = title
+	return m.applyUpdate(root, in)
 }
 
 func (m *cardModel) saveDescription(root *Model, desc string) tea.Cmd {
