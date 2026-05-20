@@ -2,6 +2,10 @@
 
 A CLI and TUI client for [Nextcloud Deck](https://apps.nextcloud.com/apps/deck), written in Go.
 
+<p align="center">
+  <img src="docs/deck.png" alt="ncdeck TUI showing a kanban board with labels, due dates, and a done column" width="820">
+</p>
+
 The CLI is designed for scripts and AI agents: every command supports `--json`,
 authentication can be set entirely via environment variables, and destructive
 operations require `--yes` when stdin is not a TTY. The TUI replicates the
