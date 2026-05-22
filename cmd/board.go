@@ -27,6 +27,10 @@ var (
 	boardUpdateArch   bool
 	boardDeleteYes    bool
 	boardExportOut    string
+	boardImportTitle       string
+	boardImportIndex       int
+	boardImportNoUsers     bool
+	boardImportKeepDefault bool
 )
 
 var boardListCmd = &cobra.Command{
@@ -219,6 +223,61 @@ omits them too.`,
 	},
 }
 
+var boardImportCmd = &cobra.Command{
+	Use:   "import <FILE>",
+	Short: "Import a board from a JSON file (occ deck:export schema)",
+	Long: `Import a board from a JSON file produced by ` + "`ncdeck board export`" + ` or
+Nextcloud's ` + "`occ deck:export`" + ` server-side command.
+
+The board is recreated on the configured server with a fresh ID. Labels,
+stacks and cards are remapped on the fly. Cards preserve their description,
+due date, done state, archived flag, label assignments and user assignees.
+
+Caveats:
+  - Comments are not in the export schema and cannot be restored.
+  - Attachments are skipped.
+  - createdAt / lastModified become import-time values.
+  - Assignees referencing UIDs not on the target server are skipped (one
+    warning line each); pass --skip-assignees to suppress them entirely.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		raw, err := os.ReadFile(args[0])
+		if err != nil {
+			return fmt.Errorf("read %q: %w", args[0], err)
+		}
+		var export api.DeckExport
+		if err := json.Unmarshal(raw, &export); err != nil {
+			return fmt.Errorf("parse %q: %w", args[0], err)
+		}
+
+		c, err := newClient()
+		if err != nil {
+			return err
+		}
+
+		progress := func(line string) { fmt.Fprintln(cmd.ErrOrStderr(), line) }
+		opts := api.ImportOptions{
+			TitleOverride:     boardImportTitle,
+			BoardIndex:        boardImportIndex,
+			SkipAssignees:     boardImportNoUsers,
+			KeepDefaultLabels: boardImportKeepDefault,
+		}
+		board, err := c.ImportBoard(cmd.Context(), &export, opts, progress)
+		if err != nil {
+			if board != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "partial import: board id %d was created before the failure; inspect or delete with `ncdeck board delete %d`\n", board.ID, board.ID)
+			}
+			return err
+		}
+
+		if flagJSON {
+			return output.JSON(cmd.OutOrStdout(), board)
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Imported board %q as id %d\n", board.Title, board.ID)
+		return nil
+	},
+}
+
 func init() {
 	boardListCmd.Flags().BoolVar(&boardListArchived, "archived", false, "include archived boards")
 	boardListCmd.Flags().BoolVar(&boardListDetails, "details", false, "request server-side details")
@@ -228,7 +287,11 @@ func init() {
 	boardUpdateCmd.Flags().BoolVar(&boardUpdateArch, "archived", false, "archive (true) or unarchive (false)")
 	boardDeleteCmd.Flags().BoolVar(&boardDeleteYes, "yes", false, "skip confirmation")
 	boardExportCmd.Flags().StringVarP(&boardExportOut, "out", "o", "", "output file (default stdout)")
+	boardImportCmd.Flags().StringVar(&boardImportTitle, "title", "", "override the imported board's title")
+	boardImportCmd.Flags().IntVar(&boardImportIndex, "board-index", 0, "pick a board from a multi-board file (0-based)")
+	boardImportCmd.Flags().BoolVar(&boardImportNoUsers, "skip-assignees", false, "don't try to assign users")
+	boardImportCmd.Flags().BoolVar(&boardImportKeepDefault, "keep-default-labels", false, "keep the four labels Deck auto-creates on new boards")
 
-	boardCmd.AddCommand(boardListCmd, boardCreateCmd, boardShowCmd, boardUpdateCmd, boardDeleteCmd, boardExportCmd)
+	boardCmd.AddCommand(boardListCmd, boardCreateCmd, boardShowCmd, boardUpdateCmd, boardDeleteCmd, boardExportCmd, boardImportCmd)
 	rootCmd.AddCommand(boardCmd)
 }

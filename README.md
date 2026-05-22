@@ -79,6 +79,8 @@ ncdeck board create <title> [--color HEX]
 ncdeck board show <id>
 ncdeck board update <id> [--title T] [--color HEX] [--archived]
 ncdeck board delete <id> [--yes]
+ncdeck board export <id> [-o FILE]
+ncdeck board import <FILE> [--title T] [--board-index N] [--skip-assignees] [--keep-default-labels]
 
 ncdeck stack ls <boardID>
 ncdeck stack create <boardID> <title> [--order N]
@@ -129,6 +131,22 @@ ncdeck card edit $BID $SID 42 --due ""
 Clearing a due date requires passing `--due ""` explicitly (sends JSON `null`).
 
 To clear `done`, omit `--done` (or pass `--done=false`) on the next `card edit`.
+
+### Board import / export
+
+`ncdeck board export` and `ncdeck board import` use the same JSON schema as
+Nextcloud's server-side `occ deck:export` / `occ deck:import`, so files
+round-trip between either tool.
+
+```sh
+ncdeck board export 11 -o demo.json
+ncdeck board import demo.json --title "demo (copy)"
+```
+
+What does round-trip: titles, colors, descriptions, due dates, done state,
+archived flag, label assignments, user assignees (when the UID exists on the
+target server). What doesn't: comments (omitted by the schema), attachment
+payload bytes, and timestamps (`createdAt` / `lastModified` are server-set).
 
 ## TUI
 
