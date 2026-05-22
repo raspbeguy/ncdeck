@@ -309,19 +309,27 @@ func (m *Model) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
 }
 
+// filterVisibleBoards hides archived AND soft-deleted (deletedAt != 0)
+// boards to match the web UI. The Deck API includes both in the default
+// list response; opening a soft-deleted board returns 503 because its
+// contents are gone.
+func filterVisibleBoards(bs []api.Board) []api.Board {
+	out := make([]api.Board, 0, len(bs))
+	for _, b := range bs {
+		if !b.Archived && b.DeletedAt == 0 {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
 func (m *Model) loadBoards() tea.Cmd {
 	return func() tea.Msg {
 		bs, err := m.client.ListBoards(m.ctx, false)
 		if err != nil {
 			return errMsg{err}
 		}
-		filt := make([]api.Board, 0, len(bs))
-		for _, b := range bs {
-			if !b.Archived {
-				filt = append(filt, b)
-			}
-		}
-		return boardsLoadedMsg{filt}
+		return boardsLoadedMsg{filterVisibleBoards(bs)}
 	}
 }
 

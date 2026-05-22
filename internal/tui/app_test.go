@@ -257,3 +257,20 @@ func TestEnterCard_NilCardIsNoOp(t *testing.T) {
 		t.Errorf("active changed: got %d, want %d (no-op)", m.active, startActive)
 	}
 }
+
+// Pinned: a soft-deleted board (deletedAt != 0) used to leak into the
+// board picker, where opening it returned 503 from the server. The web UI
+// hides these; ncdeck must match.
+func TestFilterVisibleBoards_HidesArchivedAndDeleted(t *testing.T) {
+	in := []api.Board{
+		{ID: 1, Title: "active"},
+		{ID: 2, Title: "archived", Archived: true},
+		{ID: 3, Title: "deleted", DeletedAt: 1779456996},
+		{ID: 4, Title: "both", Archived: true, DeletedAt: 1779456996},
+		{ID: 5, Title: "also active"},
+	}
+	out := filterVisibleBoards(in)
+	if len(out) != 2 || out[0].ID != 1 || out[1].ID != 5 {
+		t.Errorf("expected only ids 1 and 5 to survive; got %+v", out)
+	}
+}

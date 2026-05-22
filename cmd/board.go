@@ -20,6 +20,7 @@ var boardCmd = &cobra.Command{
 
 var (
 	boardListArchived bool
+	boardListDeleted  bool
 	boardListDetails  bool
 	boardCreateColor  string
 	boardUpdateTitle  string
@@ -46,15 +47,17 @@ var boardListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if !boardListArchived {
-			filtered := boards[:0]
-			for _, b := range boards {
-				if !b.Archived {
-					filtered = append(filtered, b)
-				}
+		filtered := boards[:0]
+		for _, b := range boards {
+			if b.Archived && !boardListArchived {
+				continue
 			}
-			boards = filtered
+			if b.DeletedAt != 0 && !boardListDeleted {
+				continue
+			}
+			filtered = append(filtered, b)
 		}
+		boards = filtered
 		if flagJSON {
 			return output.JSON(cmd.OutOrStdout(), boards)
 		}
@@ -64,9 +67,13 @@ var boardListCmd = &cobra.Command{
 			if b.Archived {
 				archived = "yes"
 			}
-			rows = append(rows, []string{strconv.Itoa(b.ID), b.Title, "#" + b.Color, b.OwnerRaw.UID, archived})
+			deleted := ""
+			if b.DeletedAt != 0 {
+				deleted = "yes"
+			}
+			rows = append(rows, []string{strconv.Itoa(b.ID), b.Title, "#" + b.Color, b.OwnerRaw.UID, archived, deleted})
 		}
-		output.Table(cmd.OutOrStdout(), []string{"ID", "TITLE", "COLOR", "OWNER", "ARCHIVED"}, rows)
+		output.Table(cmd.OutOrStdout(), []string{"ID", "TITLE", "COLOR", "OWNER", "ARCHIVED", "DELETED"}, rows)
 		return nil
 	},
 }
@@ -280,6 +287,7 @@ Caveats:
 
 func init() {
 	boardListCmd.Flags().BoolVar(&boardListArchived, "archived", false, "include archived boards")
+	boardListCmd.Flags().BoolVar(&boardListDeleted, "deleted", false, "include soft-deleted boards (deletedAt != 0)")
 	boardListCmd.Flags().BoolVar(&boardListDetails, "details", false, "request server-side details")
 	boardCreateCmd.Flags().StringVar(&boardCreateColor, "color", "", "hex color without # (default 0082c9)")
 	boardUpdateCmd.Flags().StringVar(&boardUpdateTitle, "title", "", "new title")
