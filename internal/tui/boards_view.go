@@ -27,11 +27,10 @@ type boardsModel struct {
 	cursor   int
 	showHelp bool
 
-	mode         boardsMode
-	titleInput   textinput.Model
-	picker       colorPicker
-	confirm      confirmDialog
-	pendingTitle string
+	mode       boardsMode
+	titleInput textinput.Model
+	picker     colorPicker
+	confirm    confirmDialog
 }
 
 func newBoardsModel() boardsModel {
@@ -102,6 +101,15 @@ func (b boardsModel) Update(msg tea.Msg, root *Model) (boardsModel, tea.Cmd) {
 				b.titleInput = newBoardTitleInput("rename board", b.boards[b.cursor].Title)
 				b.mode = boardsModeEditTitle
 			}
+		case "c":
+			if len(b.boards) > 0 {
+				cur := b.boards[b.cursor].Color
+				if cur == "" {
+					cur = "0082c9"
+				}
+				b.picker = newColorPicker(cur, colSelected)
+				b.mode = boardsModeEditColor
+			}
 		case "x":
 			if len(b.boards) > 0 {
 				name := b.boards[b.cursor].Title
@@ -132,14 +140,10 @@ func (b boardsModel) updateSubmode(msg tea.Msg, root *Model) (boardsModel, tea.C
 					b.mode = boardsModeList
 					return b, b.cmdCreate(root, title)
 				}
-				b.pendingTitle = title
-				cur := b.boards[b.cursor].Color
-				if cur == "" {
-					cur = "0082c9"
-				}
-				b.picker = newColorPicker(cur, colSelected)
-				b.mode = boardsModeEditColor
-				return b, nil
+				id := b.boards[b.cursor].ID
+				color := b.boards[b.cursor].Color
+				b.mode = boardsModeList
+				return b, b.cmdUpdate(root, id, title, color)
 			}
 		}
 		var cmd tea.Cmd
@@ -155,7 +159,6 @@ func (b boardsModel) updateSubmode(msg tea.Msg, root *Model) (boardsModel, tea.C
 		switch km.String() {
 		case "esc":
 			b.mode = boardsModeList
-			b.pendingTitle = ""
 			return b, nil
 		case "tab":
 			b.picker.toggleFocus()
@@ -166,9 +169,8 @@ func (b boardsModel) updateSubmode(msg tea.Msg, root *Model) (boardsModel, tea.C
 				return b, nil
 			}
 			id := b.boards[b.cursor].ID
-			title := b.pendingTitle
+			title := b.boards[b.cursor].Title
 			b.mode = boardsModeList
-			b.pendingTitle = ""
 			return b, b.cmdUpdate(root, id, title, hex)
 		case "left":
 			if !b.picker.focusInput {
@@ -248,22 +250,24 @@ func (b boardsModel) cmdDelete(root *Model, id int) tea.Cmd {
 func (b boardsModel) View(width, height int) string {
 	if b.mode == boardsModeNewTitle || b.mode == boardsModeEditTitle {
 		title := "New board"
+		hint := "⏎ create   esc cancel"
 		if b.mode == boardsModeEditTitle {
 			title = "Rename board"
+			hint = "⏎ save   esc cancel"
 		}
 		body := lipgloss.JoinVertical(lipgloss.Left,
 			lipgloss.NewStyle().Foreground(colSelected).Bold(true).Render(title),
 			"",
 			inputBoxStyle.Render(b.titleInput.View()),
 			"",
-			helpStyle.Render("⏎ next   esc cancel"),
+			helpStyle.Render(hint),
 		)
 		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center,
 			modalStyle.BorderForeground(colSelected).Padding(1, 3).Render(body))
 	}
 	if b.mode == boardsModeEditColor {
 		body := lipgloss.JoinVertical(lipgloss.Left,
-			lipgloss.NewStyle().Foreground(colSelected).Bold(true).Render(fmt.Sprintf("Colour for %q", b.pendingTitle)),
+			lipgloss.NewStyle().Foreground(colSelected).Bold(true).Render(fmt.Sprintf("Recolour board %q", b.boards[b.cursor].Title)),
 			"",
 			b.picker.view(),
 		)
@@ -279,7 +283,8 @@ func (b boardsModel) View(width, height int) string {
 			{"g / G", "first / last"},
 			{"⏎ or l", "open board"},
 			{"n", "new board"},
-			{"e", "edit board (title + colour)"},
+			{"e", "rename board"},
+			{"c", "recolour board"},
 			{"x", "delete board"},
 			{"r", "refresh"},
 			{"q / esc", "quit"},
@@ -314,6 +319,6 @@ func (b boardsModel) View(width, height int) string {
 		}
 		rows = append(rows, marker+swatch+" "+title+meta)
 	}
-	rows = append(rows, "", helpStyle.Render("↑/↓ ⏎ open   n new   e edit   x delete   ? help   q quit"))
+	rows = append(rows, "", helpStyle.Render("↑/↓ ⏎ open   n new   e rename   c colour   x delete   ? help   q quit"))
 	return lipgloss.NewStyle().Padding(1, 2).Render(lipgloss.JoinVertical(lipgloss.Left, rows...))
 }

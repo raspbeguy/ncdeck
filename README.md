@@ -174,7 +174,8 @@ and supports mouse selection where the terminal allows it.
 | `g` / `G`       | First / last                            |
 | `enter`, `l`    | Open board                              |
 | `n`             | New board (title prompt)                |
-| `e`             | Edit board (title, then colour picker)  |
+| `e`             | Rename board                            |
+| `c`             | Recolour board                          |
 | `x`             | Delete board (with confirmation)        |
 | `r`             | Refresh                                 |
 | `q` / `esc`     | Quit                                    |

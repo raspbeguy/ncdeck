@@ -271,7 +271,7 @@ func TestLabelManager_EditColorOnNonPresetHexPreservesOriginal(t *testing.T) {
 		t.Fatalf("after 'c': mode=%d intent=%d", m.mode, m.intent)
 	}
 	if !m.picker.focusInput {
-		t.Errorf("non-preset hex should auto-focus the input")
+		t.Errorf("non-preset hex should default to input focus so ⏎ keeps the typed value")
 	}
 	if a := m.Update(tea.KeyMsg{Type: tea.KeyEnter}); a != lmgrActionUpdateColor {
 		t.Fatalf("enter on edit-color should fire update, got %d", a)

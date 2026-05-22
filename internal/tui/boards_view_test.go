@@ -112,29 +112,44 @@ func TestBoardsView_EKeyOpensEditFlowPrefilledWithCurrentTitle(t *testing.T) {
 	}
 }
 
-// Pinned: the edit flow is two-stage. The first ⏎ on the title must NOT
-// commit yet; it advances to the colour picker (pre-filled with the board's
-// current colour) so the user can change both.
-func TestBoardsView_EditFlowAdvancesTitleToColor(t *testing.T) {
+// Pinned: rename is single-step. `e` opens the title input; ⏎ on the input
+// fires the update directly (using the board's current colour). No
+// intermediate colour-picker step.
+func TestBoardsView_RenameIsSingleStep(t *testing.T) {
 	b, root := boardsFixture()
 	b.cursor = 0
 	b, _ = b.Update(boardsKey("e"), root)
+	if b.mode != boardsModeEditTitle {
+		t.Fatalf("'e' should enter boardsModeEditTitle, got %d", b.mode)
+	}
 	b.titleInput.SetValue("Alpha renamed")
 	var cmd tea.Cmd
 	b, cmd = b.Update(tea.KeyMsg{Type: tea.KeyEnter}, root)
-	if cmd != nil {
-		t.Errorf("first ⏎ in the edit flow must not fire an update cmd yet (advance to colour first)")
+	if cmd == nil {
+		t.Errorf("⏎ on the rename input should fire an update cmd directly (no colour step)")
 	}
+	if b.mode != boardsModeList {
+		t.Errorf("rename should return to list mode after ⏎, got %d", b.mode)
+	}
+}
+
+// Pinned: `c` opens the colour picker directly (no title step). ⏎ on the
+// picker keeps the board title intact and updates only the colour. Mirrors
+// the label manager's `c` shortcut.
+func TestBoardsView_CKeyOpensColourPickerDirectly(t *testing.T) {
+	b, root := boardsFixture()
+	b.cursor = 0
+	b, _ = b.Update(boardsKey("c"), root)
 	if b.mode != boardsModeEditColor {
-		t.Fatalf("first ⏎ should advance to colour picker; got mode=%d", b.mode)
+		t.Fatalf("'c' should enter boardsModeEditColor, got %d", b.mode)
 	}
-	if b.pendingTitle != "Alpha renamed" {
-		t.Errorf("pendingTitle should hold the typed value; got %q", b.pendingTitle)
-	}
-	// ⏎ on the picker (red preset already selected) must fire the update.
-	_, cmd = b.Update(tea.KeyMsg{Type: tea.KeyEnter}, root)
+	var cmd tea.Cmd
+	b, cmd = b.Update(tea.KeyMsg{Type: tea.KeyEnter}, root)
 	if cmd == nil {
 		t.Errorf("⏎ on the colour picker should fire an update cmd")
+	}
+	if b.mode != boardsModeList {
+		t.Errorf("colour edit should return to list mode after ⏎, got %d", b.mode)
 	}
 }
 

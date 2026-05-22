@@ -49,8 +49,10 @@ func newColorPicker(currentHex string, accent lipgloss.Color) colorPicker {
 			break
 		}
 	}
-	// Custom hex: -1 + focused input together stop ⏎ from silently
-	// falling back to the first preset.
+	// Custom hex (not in palette): focus the input so ⏎ keeps the typed
+	// value, and leave presetIdx=-1 so no swatch lights up. If the user
+	// tabs to the palette without picking a preset, pickedColor's fallback
+	// still resolves to the input value so the original colour survives.
 	if !matched && cur != "" {
 		p.presetIdx = -1
 		p.focusInput = true
@@ -80,16 +82,18 @@ func (p *colorPicker) toggleFocus() {
 	}
 }
 
-// pickedColor returns the chosen hex (without #) and whether it's valid. When
-// the input is focused, the typed value wins; otherwise the cursor's preset.
+// pickedColor returns the chosen hex (without #) and whether it's valid.
+// Resolution order: focused input wins; else a selected preset; else the
+// input's value (the original colour we pre-filled with), so ⏎ on the
+// palette without picking anything preserves the current colour.
 func (p colorPicker) pickedColor() (string, bool) {
 	if p.focusInput {
 		return validateHex(p.input.Value())
 	}
-	if p.presetIdx < 0 || p.presetIdx >= len(p.presets) {
-		return "", false
+	if p.presetIdx >= 0 && p.presetIdx < len(p.presets) {
+		return p.presets[p.presetIdx].hex, true
 	}
-	return p.presets[p.presetIdx].hex, true
+	return validateHex(p.input.Value())
 }
 
 func validateHex(s string) (string, bool) {
@@ -116,6 +120,14 @@ func validateHex(s string) (string, bool) {
 // Byte indexing assumes the caller validated three ASCII hex digits.
 func expandHexShorthand(s string) string {
 	return string([]byte{s[0], s[0], s[1], s[1], s[2], s[2]})
+}
+
+// previewColor returns the hex the live preview swatch should show: the same
+// value ⏎ would pick. Strips the ok bool from pickedColor so it can't drift
+// out of sync with the actual save behaviour.
+func (p colorPicker) previewColor() string {
+	hex, _ := p.pickedColor()
+	return hex
 }
 
 func (p colorPicker) view() string {
@@ -150,6 +162,7 @@ func (p colorPicker) view() string {
 		inputLabel = "rgb hex (typing):"
 		inputBox = inputBoxStyle.BorderForeground(p.accent).Render(p.input.View())
 	}
+	inputRow := lipgloss.JoinHorizontal(lipgloss.Top, inputBox, "  ", p.renderPreview())
 
 	hint := "tab switch palette/hex   ←/→ pick preset   ⏎ confirm   esc cancel"
 	if p.focusInput {
@@ -160,8 +173,25 @@ func (p colorPicker) view() string {
 		lipgloss.JoinVertical(lipgloss.Left, rows...),
 		"",
 		subtleStyle.Render(inputLabel),
-		inputBox,
+		inputRow,
 		"",
 		helpStyle.Render(hint),
 	)
+}
+
+// renderPreview draws a small bordered swatch reflecting what ⏎ would pick.
+// Same height as inputBoxStyle (3 rows) so JoinHorizontal aligns cleanly.
+// Invalid/empty preview renders a dim "?" so the layout doesn't jitter and
+// the user sees that the current value can't be saved.
+func (p colorPicker) renderPreview() string {
+	base := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colSubtle).
+		Padding(0, 1)
+	if hex := p.previewColor(); hex != "" {
+		return base.Background(lipgloss.Color("#" + hex)).Render("   ")
+	}
+	// " ? " keeps the placeholder the same outer dimensions as the coloured
+	// swatch above (3 content cells + padding + border).
+	return base.Foreground(colSubtle).Render(" ? ")
 }
