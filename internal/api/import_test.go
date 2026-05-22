@@ -176,6 +176,13 @@ func TestImportBoard_HappyPath(t *testing.T) {
 	if board.Title != "demo" {
 		t.Errorf("board title: %q", board.Title)
 	}
+	// Pinned: ImportBoard must re-fetch before returning, so the snapshot
+	// the caller sees (and --json prints) reflects post-import state. The
+	// stub's POST /boards returns Labels:[] but its GET /boards/{id} returns
+	// 4 defaults, so a non-empty Labels slice proves the re-fetch happened.
+	if len(board.Labels) == 0 {
+		t.Errorf("ImportBoard must re-fetch the board so callers see post-import state; got 0 labels")
+	}
 
 	calls := stub.calls
 	if len(calls) == 0 {
@@ -314,6 +321,140 @@ func TestImportBoard_RejectsEmptyAndOutOfRange(t *testing.T) {
 	}
 	if _, err := c.ImportBoard(context.Background(), miniExport(), ImportOptions{BoardIndex: 5}, nil); err == nil {
 		t.Errorf("out-of-range BoardIndex must error")
+	}
+}
+
+// Pinned: a card with DueDate must round-trip the duedate field on the
+// initial CreateCardInput POST body; a card with Done or Archived must fire
+// a follow-up UpdateCard with the corresponding body field. A future refactor
+// that silently no-ops either path would otherwise leave every existing test
+// green.
+func TestImportBoard_DueDoneArchivedRoundTripInBodies(t *testing.T) {
+	stub := newImportStub(t)
+	c, _ := newTestServer(t, stub.handler())
+	if _, err := c.ImportBoard(context.Background(), miniExport(), ImportOptions{}, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	cardPosts := filter(stub.calls, func(r recordedReq) bool {
+		return r.method == "POST" && strings.Contains(r.path, "/stacks/") && strings.HasSuffix(r.path, "/cards")
+	})
+	var withDue *recordedReq
+	for i := range cardPosts {
+		if strings.Contains(cardPosts[i].body, `"title":"first by order"`) {
+			withDue = &cardPosts[i]
+			break
+		}
+	}
+	if withDue == nil {
+		t.Fatalf("could not find the CreateCard POST for the card carrying a due date")
+	}
+	if !strings.Contains(withDue.body, `"duedate":"2026-05-10T00:00:00+00:00"`) {
+		t.Errorf("CreateCardInput body must carry the export's duedate verbatim; got %s", withDue.body)
+	}
+
+	// /archive and /unarchive are filtered out defensively in case the
+	// implementation ever moves from UpdateCard{Archived} to the dedicated
+	// ArchiveCard/UnarchiveCard endpoints.
+	cardUpdates := filter(stub.calls, func(r recordedReq) bool {
+		return r.method == "PUT" && strings.Contains(r.path, "/cards/") &&
+			!strings.HasSuffix(r.path, "/assignLabel") &&
+			!strings.HasSuffix(r.path, "/assignUser") &&
+			!strings.HasSuffix(r.path, "/archive") &&
+			!strings.HasSuffix(r.path, "/unarchive")
+	})
+	var sawArchived, sawDone bool
+	for _, u := range cardUpdates {
+		if strings.Contains(u.body, `"archived":true`) {
+			sawArchived = true
+		}
+		if strings.Contains(u.body, `"done":"2026-05-20T19:37:15+00:00"`) {
+			sawDone = true
+		}
+	}
+	if !sawArchived {
+		t.Errorf("expected an UpdateCard body with archived:true for the archived card; got updates: %+v", cardUpdates)
+	}
+	if !sawDone {
+		t.Errorf("expected an UpdateCard body with the done timestamp for the done card; got updates: %+v", cardUpdates)
+	}
+}
+
+func TestImportBoard_MultiBoardIndexPicksTheRightOne(t *testing.T) {
+	export := &DeckExport{
+		Boards: []ExportBoard{
+			{ID: 1, Title: "first", Color: "111111", Stacks: map[string]ExportStack{}},
+			{ID: 2, Title: "second", Color: "222222", Stacks: map[string]ExportStack{}},
+			{ID: 3, Title: "third", Color: "333333", Stacks: map[string]ExportStack{}},
+		},
+	}
+	stub := newImportStub(t)
+	c, _ := newTestServer(t, stub.handler())
+	if _, err := c.ImportBoard(context.Background(), export, ImportOptions{BoardIndex: 1}, nil); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	first := stub.calls[0]
+	if first.method != "POST" || !strings.HasSuffix(first.path, "/boards") {
+		t.Fatalf("first call must be POST /boards; got %s %s", first.method, first.path)
+	}
+	if !strings.Contains(first.body, `"title":"second"`) || !strings.Contains(first.body, `"color":"222222"`) {
+		t.Errorf("--board-index=1 must pick boards[1] (\"second\"/\"222222\"); body: %s", first.body)
+	}
+}
+
+// Pinned: a label reference on a card that points to an id missing from the
+// file's labels[] must surface a warning, not vanish silently.
+func TestImportBoard_UnknownLabelReferenceLogsWarning(t *testing.T) {
+	export := &DeckExport{
+		Boards: []ExportBoard{{
+			Title: "demo",
+			Color: "0082c9",
+			Labels: []ExportLabel{
+				{ID: 58, Title: "bug", Color: "e74c3c"},
+			},
+			Stacks: map[string]ExportStack{
+				"46": {ID: 46, Title: "A", Order: 0, Cards: []ExportCard{
+					{ID: 100, Title: "with phantom label", Order: 0, Type: "plain",
+						Labels: []ExportLabel{
+							{ID: 58, Title: "bug"},
+							{ID: 999, Title: "ghost-not-in-file"},
+						},
+					},
+				}},
+			},
+		}},
+	}
+
+	stub := newImportStub(t)
+	c, _ := newTestServer(t, stub.handler())
+
+	var warnings []string
+	progress := func(s string) {
+		if strings.HasPrefix(s, "warning:") {
+			warnings = append(warnings, s)
+		}
+	}
+	if _, err := c.ImportBoard(context.Background(), export, ImportOptions{}, progress); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	matched := false
+	for _, w := range warnings {
+		if strings.Contains(w, "label id 999") {
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		t.Errorf("expected a warning citing the missing label id 999; got warnings: %v", warnings)
+	}
+
+	// The warning must not abort the loop: the valid label (id 58) on the
+	// same card still needs its assignment to fire.
+	assignLabels := filter(stub.calls, func(r recordedReq) bool {
+		return r.method == "PUT" && strings.HasSuffix(r.path, "/assignLabel")
+	})
+	if len(assignLabels) != 1 {
+		t.Errorf("the valid label assignment must still fire alongside the warning; got %d /assignLabel calls", len(assignLabels))
 	}
 }
 

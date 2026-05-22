@@ -95,11 +95,24 @@ func (c *Client) ImportBoard(ctx context.Context, export *DeckExport, opts Impor
 		report(fmt.Sprintf("%s: %d/%d cards", s.Title, created, len(cards)))
 	}
 
+	// CreateBoard's response is the server's first snapshot, taken before any
+	// of our follow-up calls ran. Re-fetch so callers (especially --json) see
+	// the post-import state. GetBoard returns labels but not stacks; callers
+	// that want a full snapshot should follow up with `board show`.
+	if fresh, err := c.GetBoard(ctx, board.ID); err == nil {
+		board = fresh
+	} else {
+		report(fmt.Sprintf("warning: couldn't re-fetch the imported board: %v", err))
+	}
+
 	return board, nil
 }
 
 // wipeAutoLabels removes the four default labels Deck auto-creates with every
-// new board, so the imported labels don't fight them by title.
+// new board, so the imported labels don't fight them by title. Aborts on the
+// first delete failure: the cause is almost always auth/permissions, and a
+// best-effort partial wipe would leave defaults coexisting with imports
+// silently (worse than failing loudly).
 func (c *Client) wipeAutoLabels(ctx context.Context, boardID int) (int, error) {
 	b, err := c.GetBoard(ctx, boardID)
 	if err != nil {
@@ -163,9 +176,10 @@ func (c *Client) importCard(ctx context.Context, boardID, stackID int, card Expo
 	for _, l := range card.Labels {
 		nid, ok := labelMap[l.ID]
 		if !ok {
-			// Label referenced by id but not present in the file's
-			// labels[] array. Skip rather than error: a defensive sample
-			// or a Trello-converted file might lack the entry.
+			// Card references a label id that wasn't in the file's labels[].
+			// Surface a warning so silent data loss is visible (a Trello-
+			// converted file, or a hand-edited export, can land here).
+			report(fmt.Sprintf("warning: card %q references label id %d not in the file; assignment skipped", card.Title, l.ID))
 			continue
 		}
 		if err := c.AssignLabelToCard(ctx, boardID, stackID, created.ID, nid); err != nil {

@@ -113,7 +113,7 @@ func (c *Client) ExportBoard(ctx context.Context, boardID int) (*DeckExport, err
 		Owner:          board.OwnerRaw.UID,
 		Color:          board.Color,
 		Archived:       board.Archived,
-		Labels:         convertBoardLabels(board.Labels),
+		Labels:         convertLabels(board.Labels, 0),
 		ACL:            []any{},
 		Permissions:    []any{},
 		Users:          []any{},
@@ -130,35 +130,25 @@ func (c *Client) ExportBoard(ctx context.Context, boardID int) (*DeckExport, err
 	return &DeckExport{Boards: []ExportBoard{eb}}, nil
 }
 
-func convertBoardLabels(labels []Label) []ExportLabel {
+// cardID==0 means board-level (CardID stays nil); non-zero is the parent
+// card's id. The `id := cardID` local is intentional: each ExportLabel needs
+// its own *int so JSON renders cardId distinctly on every element.
+func convertLabels(labels []Label, cardID int) []ExportLabel {
 	out := make([]ExportLabel, 0, len(labels))
 	for _, l := range labels {
-		out = append(out, ExportLabel{
+		el := ExportLabel{
 			ID:           l.ID,
 			Title:        l.Title,
 			Color:        l.Color,
 			BoardID:      l.BoardID,
-			CardID:       nil,
 			LastModified: l.LastModified,
 			ETag:         l.ETag,
-		})
-	}
-	return out
-}
-
-func convertCardLabels(labels []Label, cardID int) []ExportLabel {
-	out := make([]ExportLabel, 0, len(labels))
-	for _, l := range labels {
-		id := cardID
-		out = append(out, ExportLabel{
-			ID:           l.ID,
-			Title:        l.Title,
-			Color:        l.Color,
-			BoardID:      l.BoardID,
-			CardID:       &id,
-			LastModified: l.LastModified,
-			ETag:         l.ETag,
-		})
+		}
+		if cardID != 0 {
+			id := cardID
+			el.CardID = &id
+		}
+		out = append(out, el)
 	}
 	return out
 }
@@ -207,7 +197,7 @@ func convertCard(c Card) ExportCard {
 		LastModified:    c.LastModified,
 		LastEditor:      nil,
 		CreatedAt:       c.CreatedAt,
-		Labels:          convertCardLabels(c.Labels, c.ID),
+		Labels:          convertLabels(c.Labels, c.ID),
 		AssignedUsers:   assignments,
 		Attachments:     attachments,
 		AttachmentCount: attachmentCount,
