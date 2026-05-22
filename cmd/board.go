@@ -3,7 +3,9 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 
 	"github.com/raspbeguy/ncdeck/internal/api"
@@ -24,6 +26,7 @@ var (
 	boardUpdateColor  string
 	boardUpdateArch   bool
 	boardDeleteYes    bool
+	boardExportOut    string
 )
 
 var boardListCmd = &cobra.Command{
@@ -178,6 +181,44 @@ var boardDeleteCmd = &cobra.Command{
 	},
 }
 
+var boardExportCmd = &cobra.Command{
+	Use:   "export <boardID>",
+	Short: "Export a board to JSON in the occ deck:export schema",
+	Long: `Export a board to a JSON file matching the schema produced by Nextcloud's
+` + "`occ deck:export`" + ` server-side command. The output can be fed back through
+` + "`occ deck:import`" + ` on any Nextcloud instance.
+
+Note: comments and attachment bytes are NOT included; the server's exporter
+omits them too.`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		id, err := strconv.Atoi(args[0])
+		if err != nil {
+			return fmt.Errorf("invalid board id %q", args[0])
+		}
+		c, err := newClient()
+		if err != nil {
+			return err
+		}
+		export, err := c.ExportBoard(cmd.Context(), id)
+		if err != nil {
+			return err
+		}
+		out := cmd.OutOrStdout()
+		if boardExportOut != "" {
+			f, err := os.Create(boardExportOut)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			out = f
+		}
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
+		return enc.Encode(export)
+	},
+}
+
 func init() {
 	boardListCmd.Flags().BoolVar(&boardListArchived, "archived", false, "include archived boards")
 	boardListCmd.Flags().BoolVar(&boardListDetails, "details", false, "request server-side details")
@@ -186,7 +227,8 @@ func init() {
 	boardUpdateCmd.Flags().StringVar(&boardUpdateColor, "color", "", "new color (hex without #)")
 	boardUpdateCmd.Flags().BoolVar(&boardUpdateArch, "archived", false, "archive (true) or unarchive (false)")
 	boardDeleteCmd.Flags().BoolVar(&boardDeleteYes, "yes", false, "skip confirmation")
+	boardExportCmd.Flags().StringVarP(&boardExportOut, "out", "o", "", "output file (default stdout)")
 
-	boardCmd.AddCommand(boardListCmd, boardCreateCmd, boardShowCmd, boardUpdateCmd, boardDeleteCmd)
+	boardCmd.AddCommand(boardListCmd, boardCreateCmd, boardShowCmd, boardUpdateCmd, boardDeleteCmd, boardExportCmd)
 	rootCmd.AddCommand(boardCmd)
 }

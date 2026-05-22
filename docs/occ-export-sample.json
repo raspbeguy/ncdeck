@@ -1,0 +1,157 @@
+{
+  "boards": [
+    {
+      "id": 11,
+      "title": "ncdeck demo",
+      "owner": "raspbeguy",
+      "color": "0082c9",
+      "archived": false,
+      "labels": [
+        {
+          "id": 54,
+          "title": "Terminé",
+          "color": "31CC7C",
+          "boardId": 11,
+          "cardId": null,
+          "lastModified": 0,
+          "ETag": "cfcd208495d565ef66e7dff9f98764da"
+        },
+        {
+          "id": 55,
+          "title": "À réviser",
+          "color": "317CCC",
+          "boardId": 11,
+          "cardId": null,
+          "lastModified": 0,
+          "ETag": "cfcd208495d565ef66e7dff9f98764da"
+        },
+        {
+          "id": 56,
+          "title": "Action requise",
+          "color": "FF7A66",
+          "boardId": 11,
+          "cardId": null,
+          "lastModified": 0,
+          "ETag": "cfcd208495d565ef66e7dff9f98764da"
+        },
+        {
+          "id": 57,
+          "title": "Plus tard",
+          "color": "F1DB50",
+          "boardId": 11,
+          "cardId": null,
+          "lastModified": 0,
+          "ETag": "cfcd208495d565ef66e7dff9f98764da"
+        },
+        {
+          "id": 58,
+          "title": "bug",
+          "color": "e74c3c",
+          "boardId": 11,
+          "cardId": null,
+          "lastModified": 0,
+          "ETag": "cfcd208495d565ef66e7dff9f98764da"
+        },
+        {
+          "id": 59,
+          "title": "feature",
+          "color": "2ecc71",
+          "boardId": 11,
+          "cardId": null,
+          "lastModified": 0,
+          "ETag": "cfcd208495d565ef66e7dff9f98764da"
+        },
+        {
+          "id": 60,
+          "title": "docs",
+          "color": "3498db",
+          "boardId": 11,
+          "cardId": null,
+          "lastModified": 0,
+          "ETag": "cfcd208495d565ef66e7dff9f98764da"
+        },
+        {
+          "id": 61,
+          "title": "urgent",
+          "color": "e67e22",
+          "boardId": 11,
+          "cardId": null,
+          "lastModified": 0,
+          "ETag": "cfcd208495d565ef66e7dff9f98764da"
+        },
+        {
+          "id": 62,
+          "title": "polish",
+          "color": "9b59b6",
+          "boardId": 11,
+          "cardId": null,
+          "lastModified": 0,
+          "ETag": "cfcd208495d565ef66e7dff9f98764da"
+        }
+      ],
+      "acl": [],
+      "permissions": [],
+      "users": [],
+      "stacks": {
+        "46": {
+          "id": 46,
+          "title": "Backlog",
+          "boardId": 11,
+          "deletedAt": 0,
+          "lastModified": 1779305832,
+          "cards": [
+            {
+              "id": 123,
+              "title": "Migrate auth to OIDC",
+              "description": "",
+              "descriptionPrev": null,
+              "stackId": 46,
+              "type": "plain",
+              "lastModified": 1779305831,
+              "lastEditor": null,
+              "createdAt": 1779305830,
+              "labels": [
+                {
+                  "id": 59,
+                  "title": "feature",
+                  "color": "2ecc71",
+                  "boardId": 11,
+                  "cardId": 123,
+                  "lastModified": 0,
+                  "ETag": "cfcd208495d565ef66e7dff9f98764da"
+                }
+              ],
+              "assignedUsers": [],
+              "attachments": null,
+              "attachmentCount": null,
+              "owner": {
+                "primaryKey": "raspbeguy",
+                "uid": "raspbeguy",
+                "displayname": "raspbeguy",
+                "type": 0
+              },
+              "order": 999,
+              "archived": false,
+              "done": null,
+              "duedate": null,
+              "notified": false,
+              "deletedAt": 0,
+              "commentsUnread": 0,
+              "commentsCount": 0,
+              "relatedStack": null,
+              "relatedBoard": null,
+              "ETag": "1464db731cfd96952c2156e3974aa47a"
+            }
+          ],
+          "order": 0,
+          "ETag": "a58b7b2ef5fc34348b88bf8ee555d394"
+        }
+      },
+      "activeSessions": [],
+      "deletedAt": 0,
+      "lastModified": 1779447835,
+      "settings": [],
+      "ETag": "a43b451b25ad6246b8edd0f45cbe7669"
+    }
+  ]
+}
