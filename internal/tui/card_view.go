@@ -487,9 +487,8 @@ func (m *cardModel) postComment(root *Model, text string) tea.Cmd {
 	}
 }
 
-// createLabel creates a fresh label on the board and assigns it to this card
-// in one cmd. Color defaults to a muted grey; users can recolour via the web
-// UI or `ncdeck label` if they want a brighter chip.
+// Color defaults to a muted grey; users can recolour via the web UI or
+// `ncdeck label` later.
 const newLabelDefaultColor = "888888"
 
 func (m *cardModel) createLabel(root *Model, name string) tea.Cmd {

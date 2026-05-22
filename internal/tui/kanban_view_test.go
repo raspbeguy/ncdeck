@@ -6,6 +6,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -28,6 +30,87 @@ func newKanbanWithStubServer(t *testing.T, h http.HandlerFunc) (*Model, *kanbanM
 
 func isRefreshMsg(msg tea.Msg) bool { _, ok := msg.(refreshMsg); return ok }
 func isErrMsg(msg tea.Msg) bool     { _, ok := msg.(errMsg); return ok }
+
+// Pinned: 'x' must NOT delete the card directly anymore. It opens the
+// confirm dialog; 'y' deletes; ⏎ on the dialog must cancel.
+func TestKanbanView_XOpensConfirmThenYDeletes(t *testing.T) {
+	var deletedCardID int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "DELETE" {
+			// path looks like /index.php/.../cards/10
+			parts := strings.Split(r.URL.Path, "/")
+			deletedCardID, _ = strconv.Atoi(parts[len(parts)-1])
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+	root := &Model{ctx: context.Background(), client: api.New(srv.URL, "u", "p")}
+	k := newKanbanModel(7)
+	k.stacks = []api.Stack{{ID: 1, Title: "A", Cards: []api.Card{{ID: 10, Title: "doomed"}}}}
+	root.kanban = k
+
+	_, _ = k.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")}, root)
+	if !k.confirmOpen {
+		t.Fatalf("'x' should open the confirm dialog, not delete directly")
+	}
+	if deletedCardID != 0 {
+		t.Errorf("no DELETE should have hit the server before the user confirms")
+	}
+
+	// ⏎ must cancel.
+	_, _ = k.Update(tea.KeyMsg{Type: tea.KeyEnter}, root)
+	if k.confirmOpen {
+		t.Errorf("⏎ on the confirm should cancel and close the dialog")
+	}
+	if deletedCardID != 0 {
+		t.Errorf("⏎ must not have fired the delete cmd")
+	}
+
+	// Reopen and confirm with 'y'.
+	_, _ = k.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")}, root)
+	_, cmd := k.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}, root)
+	if cmd == nil {
+		t.Fatalf("'y' on the confirm should fire a delete cmd")
+	}
+	_ = cmd() // execute the HTTP call
+	if deletedCardID != 10 {
+		t.Errorf("delete should have hit the focused card; got deletedCardID=%d", deletedCardID)
+	}
+}
+
+// Pinned: 'X' deletes the focused STACK (not just a card). Confirm dialog
+// fires DeleteStack against the right ID.
+func TestKanbanView_BigXDeletesTheFocusedStack(t *testing.T) {
+	var deletedStackID int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "DELETE" && strings.HasSuffix(r.URL.Path, "/stacks/2") {
+			deletedStackID = 2
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+	root := &Model{ctx: context.Background(), client: api.New(srv.URL, "u", "p")}
+	k := newKanbanModel(7)
+	k.stacks = []api.Stack{
+		{ID: 1, Title: "A"},
+		{ID: 2, Title: "B"},
+	}
+	k.stackIdx = 1
+	root.kanban = k
+
+	_, _ = k.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("X")}, root)
+	if !k.confirmOpen || k.confirmKind != confirmDeleteStack {
+		t.Fatalf("'X' should open confirm with confirmDeleteStack; got open=%v kind=%d", k.confirmOpen, k.confirmKind)
+	}
+	_, cmd := k.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}, root)
+	if cmd == nil {
+		t.Fatalf("'y' on the stack-delete confirm should fire a cmd")
+	}
+	_ = cmd()
+	if deletedStackID != 2 {
+		t.Errorf("DeleteStack should hit the focused stack id; got deletedStackID=%d", deletedStackID)
+	}
+}
 
 // Pinned: while the help overlay is up, keys other than `?` / `esc` must be
 // swallowed in the kanban view too. A real user reported `⏎` opening a card

@@ -2,13 +2,28 @@
 
 package api
 
+// We import boards client-side (CreateBoard + many follow-ups) rather than
+// POSTing the whole JSON to Deck's bulk import endpoints. Reasons:
+//   - Deck's web-UI route (POST /index.php/apps/deck/boards/import) requires
+//     session cookies + a CSRF requesttoken. ncdeck authenticates with app
+//     passwords (basic auth), so we'd need a full login-and-session shim.
+//   - Deck's documented API route (POST /api/v1.0/boards/import) accepts
+//     basic auth but is broken on at least Nextcloud 32 / Deck 1.16: the
+//     `data` field arrives at the controller as an int regardless of the
+//     posted JSON, returning "must be of type stdClass, int given".
+//   - Even when the web-UI route works, the server-side importer drops the
+//     `done` timestamp on cards. Our client-side path restores it.
+//
+// If the documented API import endpoint gets fixed upstream, the natural
+// move is to add a --via-server opt-in flag, keeping this orchestrator as
+// the default.
+
 import (
 	"context"
 	"fmt"
 	"sort"
 )
 
-// ImportOptions controls how ImportBoard handles edge cases.
 type ImportOptions struct {
 	TitleOverride      string
 	BoardIndex         int
@@ -21,9 +36,6 @@ type ImportOptions struct {
 // surfaced via this callback instead.
 type ImportProgress func(line string)
 
-// ImportBoard recreates a board from a DeckExport on the target server.
-// Returns the freshly-created Board (with the new server-assigned ID).
-//
 // IDs are remapped on the fly: stack and label references inside the export
 // don't match the new server's IDs, so we build oldID -> newID maps for
 // labels and stacks before creating cards.

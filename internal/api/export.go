@@ -9,9 +9,8 @@ import (
 	"strconv"
 )
 
-// DeckExport matches the JSON shape produced by `occ deck:export` and
-// consumed by `occ deck:import`. Comments are intentionally absent: the
-// server's exporter doesn't include them.
+// Comments are intentionally absent from the schema: Deck's exporter
+// doesn't include them, and `occ deck:import` doesn't accept them.
 type DeckExport struct {
 	Boards []ExportBoard `json:"boards"`
 }
@@ -95,8 +94,6 @@ type ExportAssignment struct {
 // base64-encoded data) round-trip without us guessing.
 type ExportAttachment map[string]any
 
-// ExportBoard fetches a board and its stacks/cards from the live Deck
-// server and assembles them into the same JSON shape as `occ deck:export`.
 func (c *Client) ExportBoard(ctx context.Context, boardID int) (*DeckExport, error) {
 	board, err := c.GetBoard(ctx, boardID)
 	if err != nil {

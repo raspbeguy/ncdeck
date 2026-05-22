@@ -65,8 +65,24 @@ type kanbanModel struct {
 	labelMgr     labelManager
 	labelMgrOpen bool
 
+	// confirm is the y/n delete prompt. confirmKind tells executeConfirm
+	// which target (card vs stack) to act on; the focused card/stack at
+	// confirm-open time is what gets deleted because the modal gate
+	// prevents navigation while the prompt is up.
+	confirm     confirmDialog
+	confirmOpen bool
+	confirmKind kanbanConfirmKind
+
 	colWidth int
 }
+
+type kanbanConfirmKind int
+
+const (
+	confirmNone kanbanConfirmKind = iota
+	confirmDeleteCard
+	confirmDeleteStack
+)
 
 func newKanbanModel(boardID int) *kanbanModel {
 	return &kanbanModel{boardID: boardID, colWidth: kanbanDefaultColWidth}
@@ -132,6 +148,21 @@ func (k *kanbanModel) visibleCardCount() int {
 }
 
 func (k *kanbanModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
+	if k.confirmOpen {
+		if km, ok := msg.(tea.KeyMsg); ok {
+			switch k.confirm.Update(km) {
+			case confirmActionYes:
+				cmd := k.executeConfirm(root)
+				k.confirmOpen = false
+				k.confirmKind = confirmNone
+				return root, cmd
+			case confirmActionNo:
+				k.confirmOpen = false
+				k.confirmKind = confirmNone
+			}
+		}
+		return root, nil
+	}
 	if k.labelMgrOpen {
 		if km, ok := msg.(tea.KeyMsg); ok {
 			return root, k.handleLabelMgrKey(root, km)
@@ -268,7 +299,15 @@ func (k *kanbanModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 			}
 		case "x":
 			if c := k.focusedCard(); c != nil {
-				return root, k.doDelete(root, c)
+				k.confirmKind = confirmDeleteCard
+				k.confirm = newConfirmDialog(fmt.Sprintf("Delete card %q?", c.Title), k.accentColor())
+				k.confirmOpen = true
+			}
+		case "X":
+			if s := k.curStack(); s != nil {
+				k.confirmKind = confirmDeleteStack
+				k.confirm = newConfirmDialog(fmt.Sprintf("Delete stack %q and all its cards?", s.Title), k.accentColor())
+				k.confirmOpen = true
 			}
 		case "n":
 			if k.curStack() != nil {
@@ -417,7 +456,35 @@ func (k *kanbanModel) doDelete(root *Model, c *api.Card) tea.Cmd {
 	}
 }
 
+func (k *kanbanModel) doDeleteStack(root *Model, s *api.Stack) tea.Cmd {
+	stackID := s.ID
+	return func() tea.Msg {
+		err := root.client.DeleteStack(root.ctx, k.boardID, stackID)
+		if err != nil {
+			return errMsg{err}
+		}
+		return refreshMsg{}
+	}
+}
+
+func (k *kanbanModel) executeConfirm(root *Model) tea.Cmd {
+	switch k.confirmKind {
+	case confirmDeleteCard:
+		if c := k.focusedCard(); c != nil {
+			return k.doDelete(root, c)
+		}
+	case confirmDeleteStack:
+		if s := k.curStack(); s != nil {
+			return k.doDeleteStack(root, s)
+		}
+	}
+	return nil
+}
+
 func (k *kanbanModel) View(width, height int) string {
+	if k.confirmOpen {
+		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, k.confirm.view())
+	}
 	if k.labelMgrOpen {
 		return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, k.labelMgr.view())
 	}
@@ -430,6 +497,7 @@ func (k *kanbanModel) View(width, height int) string {
 			{"n / N", "new card / new stack"},
 			{"m", "move card to another stack"},
 			{"a / x", "archive / delete card"},
+			{"X", "delete stack"},
 			{"L", "manage / filter labels"},
 			{"r", "refresh"},
 			{"b / esc", "back to boards"},
@@ -484,9 +552,7 @@ func (k *kanbanModel) View(width, height int) string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, cols...) + "\n" + help
 }
 
-// handleLabelMgrKey dispatches a key to the manager dialog and fires whatever
-// command (create/update/delete) the manager asks for. Closing the manager
-// commits its filter into the kanban.
+// Closing the manager commits its (mutated copy of the) filter into the kanban.
 func (k *kanbanModel) handleLabelMgrKey(root *Model, km tea.KeyMsg) tea.Cmd {
 	switch action := k.labelMgr.Update(km); action {
 	case lmgrActionClose:
@@ -574,8 +640,6 @@ func filtersEqual(a, b map[int]bool) bool {
 	return true
 }
 
-// matchesLabelFilter is true when the card has at least one label in the
-// active filter, or the filter is empty (no filter).
 func matchesLabelFilter(c api.Card, filter map[int]bool) bool {
 	if len(filter) == 0 {
 		return true

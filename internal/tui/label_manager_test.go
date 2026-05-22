@@ -105,6 +105,23 @@ func TestLabelManager_DeleteRequiresConfirm(t *testing.T) {
 	}
 }
 
+// Pinned: plain ⏎ must cancel the delete confirm, not trigger it. A reflexive
+// enter-press shouldn't destroy a label.
+func TestLabelManager_DeleteConfirmEnterCancels(t *testing.T) {
+	m := managerFixture()
+	m.cursor = 0
+	_ = m.Update(keyPress("x"))
+	if m.mode != lmgrModeConfirmDel {
+		t.Fatalf("setup: mode should be confirmDel after 'x'")
+	}
+	if a := m.Update(tea.KeyMsg{Type: tea.KeyEnter}); a != lmgrActionNone {
+		t.Errorf("⏎ on delete confirm must NOT fire lmgrActionDelete; got %d", a)
+	}
+	if m.mode != lmgrModeList {
+		t.Errorf("⏎ should cancel and return to list mode; got %d", m.mode)
+	}
+}
+
 func TestLabelManager_OnLabelCreatedAppendsAndAdvancesCursor(t *testing.T) {
 	m := managerFixture()
 	m.onLabelCreated(api.Label{ID: 99, Title: "urgent", Color: "ff0000"})

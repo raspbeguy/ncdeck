@@ -148,6 +148,17 @@ archived flag, label assignments, user assignees (when the UID exists on the
 target server). What doesn't: comments (omitted by the schema), attachment
 payload bytes, and timestamps (`createdAt` / `lastModified` are server-set).
 
+**Why client-side import?** Deck's web-UI import button POSTs to a
+non-API route that needs session cookies + a CSRF token, which ncdeck (basic
+auth via app passwords) can't easily supply. Its documented API import
+endpoint accepts basic auth but is currently broken (the `data` field
+arrives at the PHP controller as an int regardless of payload). And even
+when the web-UI path works, the server-side importer drops the `done`
+timestamp on cards; `ncdeck board import` restores it. So the trade-off is
+~45 requests against a single multipart POST, in exchange for app-password
+auth, per-card progress, precise error context, and a faithful `done`
+state.
+
 ## TUI
 
 Launch with `ncdeck tui` (board picker) or `ncdeck tui <boardID>` to jump
@@ -156,14 +167,17 @@ and supports mouse selection where the terminal allows it.
 
 ### Board picker
 
-| Key             | Action                       |
-| --------------- | ---------------------------- |
-| `j` / `down`    | Next board                   |
-| `k` / `up`      | Previous board               |
-| `g` / `G`       | First / last                 |
-| `enter`, `l`    | Open board                   |
-| `r`             | Refresh                      |
-| `q` / `esc`     | Quit                         |
+| Key             | Action                                  |
+| --------------- | --------------------------------------- |
+| `j` / `down`    | Next board                              |
+| `k` / `up`      | Previous board                          |
+| `g` / `G`       | First / last                            |
+| `enter`, `l`    | Open board                              |
+| `n`             | New board (title prompt)                |
+| `e`             | Edit board (title, then colour picker)  |
+| `x`             | Delete board (with confirmation)        |
+| `r`             | Refresh                                 |
+| `q` / `esc`     | Quit                                    |
 
 ### Kanban view
 
@@ -177,7 +191,8 @@ and supports mouse selection where the terminal allows it.
 | `N`             | New column                                          |
 | `m`             | Move card to a different column                     |
 | `a`             | Archive card                                        |
-| `x`             | Delete card                                         |
+| `x`             | Delete card (with confirmation)                     |
+| `X`             | Delete column and its cards (with confirmation)     |
 | `r`             | Refresh                                             |
 | `b` / `esc`     | Back to board picker                                |
 | `q`             | Quit                                                |

@@ -293,7 +293,7 @@ func TestImportBoard_SkipAssignees(t *testing.T) {
 }
 
 // Pinned: a 404 from assignUser (user doesn't exist on the target server) must
-// not abort the whole import — it surfaces via the progress callback as a
+// not abort the whole import; it surfaces via the progress callback as a
 // warning line and the rest of the import continues.
 func TestImportBoard_MissingAssigneeIsLoggedNotFatal(t *testing.T) {
 	stub := newImportStub(t)

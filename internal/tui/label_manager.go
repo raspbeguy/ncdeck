@@ -94,7 +94,6 @@ func (m *labelManager) toggleFilter() {
 	}
 }
 
-// beginCreate primes the name input for a fresh label.
 func (m *labelManager) beginCreate() {
 	m.mode = lmgrModeName
 	m.intent = lmgrIntentCreate
@@ -104,7 +103,6 @@ func (m *labelManager) beginCreate() {
 	m.nameIn = newNameInput("new label name", "")
 }
 
-// beginEditName primes the name input to rename the focused label.
 func (m *labelManager) beginEditName() {
 	l := m.current()
 	if l == nil {
@@ -115,7 +113,6 @@ func (m *labelManager) beginEditName() {
 	m.nameIn = newNameInput("rename label", l.Title)
 }
 
-// beginEditColor primes the color picker for the focused label.
 func (m *labelManager) beginEditColor() {
 	l := m.current()
 	if l == nil {
@@ -133,7 +130,6 @@ func (m *labelManager) beginConfirmDelete() {
 	m.mode = lmgrModeConfirmDel
 }
 
-// onLabelCreated finalises the new-label flow once the server confirms.
 func (m *labelManager) onLabelCreated(l api.Label) {
 	m.all = append(m.all, l)
 	m.cursor = len(m.all) - 1
@@ -167,8 +163,7 @@ func (m *labelManager) onLabelDeleted(id int) {
 	m.resetSubdialog()
 }
 
-// onLabelOpFailed restores the list mode without applying changes; caller
-// surfaces the error message separately.
+// Caller surfaces the error message separately; this just resets state.
 func (m *labelManager) onLabelOpFailed() { m.resetSubdialog() }
 
 func (m *labelManager) resetSubdialog() {
@@ -189,9 +184,7 @@ func newNameInput(placeholder, initial string) textinput.Model {
 	return ti
 }
 
-// Update processes a key event in whichever sub-mode the manager is in.
-// It only mutates the manager's own state; the caller fires any side-effect
-// based on the returned action.
+// Only mutates manager state; the caller fires side-effects from the returned action.
 func (m *labelManager) Update(km tea.KeyMsg) lmgrAction {
 	switch m.mode {
 	case lmgrModeName:
@@ -202,7 +195,7 @@ func (m *labelManager) Update(km tea.KeyMsg) lmgrAction {
 		switch km.String() {
 		case "y", "Y":
 			return lmgrActionDelete
-		case "n", "N", "esc":
+		case "n", "N", "esc", "enter":
 			m.resetSubdialog()
 		}
 		return lmgrActionNone
@@ -347,7 +340,7 @@ func (m labelManager) view() string {
 			"",
 			fmt.Sprintf("This will remove %q from every card on the board.", name),
 			"",
-			helpStyle.Render("y confirm   n or esc cancel"),
+			helpStyle.Render("y confirm   n / esc / ⏎ cancel"),
 		)
 		return modalStyle.BorderForeground(colDanger).Padding(1, 3).Render(body)
 	}
