@@ -135,6 +135,52 @@ func TestCardView_TitleErrorClearsOnTyping(t *testing.T) {
 	}
 }
 
+// Pinned: while the help overlay is up, keys other than `?` / `esc` must be
+// swallowed. A real user reported pressing `⏎` with help up and opening a
+// card silently. The fix makes the overlay modal.
+func TestCardView_HelpOverlayIsModal(t *testing.T) {
+	m, root := cardModelFixture()
+	_, _ = m.Update(cardKey("?"), root)
+	if !m.showHelp {
+		t.Fatalf("setup: '?' should open the help overlay")
+	}
+
+	// `t` (title edit) and `b` (body edit) must NOT take effect while help is open.
+	_, _ = m.Update(cardKey("t"), root)
+	if m.mode == cardModeEditTitle {
+		t.Errorf("'t' must be swallowed while help is up; got mode=%d", m.mode)
+	}
+	_, _ = m.Update(cardKey("b"), root)
+	if m.mode == cardModeEditDescription {
+		t.Errorf("'b' must be swallowed while help is up; got mode=%d", m.mode)
+	}
+
+	// `esc` must close the overlay but NOT also go back to kanban in the
+	// same keystroke (the cmd returned must be nil, not a backMsg).
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc}, root)
+	if m.showHelp {
+		t.Errorf("'esc' should close the help overlay")
+	}
+	if cmd != nil {
+		t.Errorf("'esc' while help is up should only close the overlay, not also fire backMsg")
+	}
+
+	// `q` must still quit even while the help overlay is up: per the project
+	// rule, q is unconditional quit. The previous gate accidentally swallowed
+	// q alongside other keys; this assertion pins the corrected behaviour.
+	_, _ = m.Update(cardKey("?"), root) // reopen the overlay
+	if !m.showHelp {
+		t.Fatalf("setup: '?' should reopen the overlay")
+	}
+	_, cmd = m.Update(cardKey("q"), root)
+	if cmd == nil {
+		t.Fatalf("'q' must return a non-nil cmd while help is up")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Errorf("'q' while help is up must still quit; got %T", cmd())
+	}
+}
+
 func TestCardView_NonEmptyTitleOnEnterFiresUpdateAndExitsEditor(t *testing.T) {
 	m, root := cardModelFixture()
 	_, _ = m.Update(cardKey("t"), root)

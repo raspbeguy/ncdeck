@@ -298,15 +298,24 @@ func (m *cardModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 	}
 
 	if km, ok := msg.(tea.KeyMsg); ok {
-		switch km.String() {
-		case "?":
-			m.showHelp = !m.showHelp
-			return root, nil
-		case "esc":
-			if m.showHelp {
+		// Help overlay is modal: only `?` / `esc` (close) and `q` (quit)
+		// respond while it's up. Without this gate, editing/labels/comment
+		// shortcuts would still fire underneath the overlay.
+		if m.showHelp {
+			switch km.String() {
+			case "?", "esc":
 				m.showHelp = false
 				return root, nil
+			case "q":
+				return root, tea.Quit
 			}
+			return root, nil
+		}
+		switch km.String() {
+		case "?":
+			m.showHelp = true
+			return root, nil
+		case "esc":
 			return root, func() tea.Msg { return backMsg{} }
 		case "q":
 			return root, tea.Quit

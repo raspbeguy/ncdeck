@@ -30,15 +30,24 @@ func (m *boardsModel) setBoards(bs []api.Board) {
 func (b boardsModel) Update(msg tea.Msg, root *Model) (boardsModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "?":
-			b.showHelp = !b.showHelp
-			return b, nil
-		case "esc":
-			if b.showHelp {
+		// Help overlay is modal: while it's up, only `?` / `esc` (close) and
+		// `q` (quit) respond. Everything else is swallowed so navigation/
+		// open/etc. can't run silently underneath the overlay.
+		if b.showHelp {
+			switch msg.String() {
+			case "?", "esc":
 				b.showHelp = false
 				return b, nil
+			case "q":
+				return b, tea.Quit
 			}
+			return b, nil
+		}
+		switch msg.String() {
+		case "?":
+			b.showHelp = true
+			return b, nil
+		case "esc":
 			return b, tea.Quit
 		case "q":
 			return b, tea.Quit

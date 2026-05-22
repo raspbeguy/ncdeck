@@ -29,6 +29,57 @@ func newKanbanWithStubServer(t *testing.T, h http.HandlerFunc) (*Model, *kanbanM
 func isRefreshMsg(msg tea.Msg) bool { _, ok := msg.(refreshMsg); return ok }
 func isErrMsg(msg tea.Msg) bool     { _, ok := msg.(errMsg); return ok }
 
+// Pinned: while the help overlay is up, keys other than `?` / `esc` must be
+// swallowed in the kanban view too. A real user reported `⏎` opening a card
+// while help was visible.
+func TestKanbanView_HelpOverlayIsModal(t *testing.T) {
+	m, k := newKanbanWithStubServer(t, func(w http.ResponseWriter, r *http.Request) {})
+	stackIdx, cardIdx := k.stackIdx, k.cardIdx
+
+	_, _ = k.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")}, m)
+	if !k.showHelp {
+		t.Fatalf("setup: '?' should open the help overlay")
+	}
+
+	// Navigation must not move the cursor while help is up.
+	_, _ = k.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}, m)
+	if k.cardIdx != cardIdx {
+		t.Errorf("'j' must be swallowed while help is up; got cardIdx=%d", k.cardIdx)
+	}
+	_, _ = k.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("l")}, m)
+	if k.stackIdx != stackIdx {
+		t.Errorf("'l' must be swallowed while help is up; got stackIdx=%d", k.stackIdx)
+	}
+
+	// ⏎ (open card) must not fire while help is up.
+	_, cmd := k.Update(tea.KeyMsg{Type: tea.KeyEnter}, m)
+	if cmd != nil {
+		t.Errorf("⏎ while help is up should be swallowed, not open the card; got non-nil cmd")
+	}
+
+	// esc closes the overlay and only that (no backMsg in the same keystroke).
+	_, cmd = k.Update(tea.KeyMsg{Type: tea.KeyEsc}, m)
+	if k.showHelp {
+		t.Errorf("'esc' should close the help overlay")
+	}
+	if cmd != nil {
+		t.Errorf("'esc' while help is up should only close the overlay, not also fire backMsg")
+	}
+
+	// q must still quit even while the help overlay is up.
+	_, _ = k.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")}, m)
+	if !k.showHelp {
+		t.Fatalf("setup: '?' should reopen the overlay")
+	}
+	_, cmd = k.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")}, m)
+	if cmd == nil {
+		t.Fatalf("'q' must return a non-nil cmd while help is up")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Errorf("'q' while help is up must still quit; got %T", cmd())
+	}
+}
+
 // --- setStacks --------------------------------------------------------------
 
 func TestSetStacks_SortsByOrder(t *testing.T) {

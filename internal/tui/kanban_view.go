@@ -168,17 +168,26 @@ func (k *kanbanModel) Update(msg tea.Msg, root *Model) (tea.Model, tea.Cmd) {
 	}
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Help overlay is modal: only `?` / `esc` (close) and `q` (quit)
+		// respond while it's up. Other keys would otherwise navigate/open/
+		// mutate cards underneath the overlay without the user seeing it.
+		if k.showHelp {
+			switch msg.String() {
+			case "?", "esc":
+				k.showHelp = false
+				return root, nil
+			case "q":
+				return root, tea.Quit
+			}
+			return root, nil
+		}
 		switch msg.String() {
 		case "?":
-			k.showHelp = !k.showHelp
+			k.showHelp = true
 			return root, nil
 		case "q":
 			return root, tea.Quit
 		case "esc":
-			if k.showHelp {
-				k.showHelp = false
-				return root, nil
-			}
 			if k.moveMode {
 				k.moveMode = false
 				root.setStatus("")
